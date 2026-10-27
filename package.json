@@ -1,9 +1,0 @@
-{
-  "name": "fertilizer-formulation-webapp",
-  "version": "1.0.0",
-  "private": true,
-  "description": "化成肥料・BB肥料 処方設計＆成分限界シミュレーター",
-  "scripts": {
-    "start": "node server.js"
-  }
-}
