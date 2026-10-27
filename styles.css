@@ -445,6 +445,85 @@ body.app-locked {
   color: var(--text-muted);
 }
 
+/* 追加保証成分（Ca, Si, S, Mn, B, Fe, Zn, Cu, Mo）セレクター */
+.extra-nutrients-selector-box {
+  background: #f8fafc;
+  border: 1px dashed #94a3b8;
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+
+.extra-selector-header {
+  font-size: 0.8rem;
+  color: var(--text-main);
+  margin-bottom: 8px;
+}
+
+.extra-selector-header small {
+  color: var(--text-muted);
+  margin-left: 4px;
+}
+
+.extra-toggles-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.extra-toggle-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+  border-radius: 99px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.14s;
+  user-select: none;
+}
+
+.extra-toggle-chip:hover {
+  border-color: var(--primary);
+  background: var(--primary-light);
+}
+
+.extra-toggle-chip.active {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+.extra-toggle-chip input {
+  accent-color: #fff;
+  cursor: pointer;
+}
+
+.extra-targets-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.extra-targets-grid:empty {
+  display: none;
+  margin-top: 0;
+}
+
+@media (max-width: 650px) {
+  .extra-targets-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.extra-theme {
+  border-top: 3px solid #0d9488;
+}
+
 .design-options-row {
   display: flex;
   justify-content: space-between;

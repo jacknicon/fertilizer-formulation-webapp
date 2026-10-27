@@ -1,15 +1,33 @@
 /**
- * 化成肥料・BB肥料 処方設計＆成分限界シミュレーター マスターデータ
+ * 化成肥料・BB肥料 処方設計＆成分限界シミュレーター マスターデータ (v2.2)
  *
  * 各成分含有率は重量百分率 (%)
  * N: 窒素全量(T-N), AN: アンモニア性窒素, UN: 尿素性窒素, NN: 硝酸性窒素
  * P: リン酸全量(T-P2O5), WP: 水溶性リン酸(W-P2O5), CP: く溶性リン酸(C-P2O5)
- * K: カリ(K2O), Mg: 苦土(MgO), Ca: 石灰(CaO), Si: ケイ酸(SiO2), Mn: マンガン(MnO), B: ホウ素(B2O3)
+ * K: カリ(K2O), Mg: 苦土(MgO), Ca: 石灰(CaO), Si: ケイ酸(SiO2), S: 硫黄(S)
+ * Mn: マンガン(MnO), B: ホウ素(B2O3), Fe: 鉄(Fe), Zn: 亜鉛(Zn), Cu: 銅(Cu), Mo: モリブデン(Mo)
  * pricePerTon: 1トン(1,000kg)あたりの参考原料価格(円)
  */
 window.MASTER_FERTILIZER_DB = {
-  version: "2.0.0",
-  updatedAt: "2026-10-27",
+  version: "2.2.0",
+  updatedAt: "2026-10-28",
+
+  // 保証・指定可能な全成分メタデータ定義
+  nutrientMeta: [
+    { key: "N", label: "窒素 (T-N)", short: "N", unit: "%", isCore: true, step: 0.5, defaultSource: "urea" },
+    { key: "P", label: "リン酸 (T-P₂O₅)", short: "P₂O₅", unit: "%", isCore: true, step: 0.5, defaultSource: "dap" },
+    { key: "K", label: "カリ (K₂O)", short: "K₂O", unit: "%", isCore: true, step: 0.5, defaultSource: "potassium_chloride" },
+    { key: "Mg", label: "苦土 (MgO)", short: "MgO", unit: "%", isCore: true, step: 0.5, defaultSource: "magnesium_hydroxide" },
+    { key: "Ca", label: "石灰 (CaO)", short: "CaO", unit: "%", isCore: false, step: 1.0, defaultSource: "filler_calcium_carbonate" },
+    { key: "Si", label: "ケイ酸 (SiO₂)", short: "SiO₂", unit: "%", isCore: false, step: 1.0, defaultSource: "calcium_silicate" },
+    { key: "S", label: "硫黄 (S)", short: "S", unit: "%", isCore: false, step: 0.5, defaultSource: "ammonium_sulfate" },
+    { key: "Mn", label: "マンガン (MnO)", short: "MnO", unit: "%", isCore: false, step: 0.1, defaultSource: "manganese_sulfate" },
+    { key: "B", label: "ホウ素 (B₂O₃)", short: "B₂O₃", unit: "%", isCore: false, step: 0.05, defaultSource: "borax" },
+    { key: "Fe", label: "鉄 (Fe)", short: "Fe", unit: "%", isCore: false, step: 0.1, defaultSource: "ferrous_sulfate" },
+    { key: "Zn", label: "亜鉛 (Zn)", short: "Zn", unit: "%", isCore: false, step: 0.05, defaultSource: "zinc_sulfate" },
+    { key: "Cu", label: "銅 (Cu)", short: "Cu", unit: "%", isCore: false, step: 0.05, defaultSource: "copper_sulfate" },
+    { key: "Mo", label: "モリブデン (Mo)", short: "Mo", unit: "%", isCore: false, step: 0.01, defaultSource: "sodium_molybdate" }
+  ],
 
   // チェックボックスで選択可能な化学的・物理的特性フラグ定義
   flagDefinitions: [
@@ -97,7 +115,8 @@ window.MASTER_FERTILIZER_DB = {
     { id: "n_source", name: "窒素質原料 (N源)" },
     { id: "np_p_source", name: "リン酸・複合中間原料 (N-P / P源)" },
     { id: "k_source", name: "カリ質・NK原料 (K源)" },
-    { id: "mg_ca_micro", name: "苦土・石灰・ケイ酸・微量要素" },
+    { id: "mg_ca_si", name: "苦土・石灰・ケイ酸・硫黄原料 (Mg/Ca/Si/S)" },
+    { id: "micronutrient", name: "微量要素原料 (Mn/B/Fe/Zn/Cu/Mo)" },
     { id: "organic", name: "有機質原料（油かす・魚粉・骨粉等）" },
     { id: "filler", name: "増量材・フィラー（重量調整材）" }
   ],
@@ -110,7 +129,7 @@ window.MASTER_FERTILIZER_DB = {
       category: "n_source",
       N: 46.0, AN: 0, UN: 46.0, NN: 0,
       P: 0, WP: 0, CP: 0,
-      K: 0, Mg: 0, Ca: 0, Si: 0, Mn: 0, B: 0,
+      K: 0, Mg: 0, Ca: 0, Si: 0, S: 0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
       pricePerTon: 98000,
       flags: ["has_un", "is_hygroscopic"],
       forbiddenWith: ["single_superphosphate", "triple_superphosphate", "ammonium_nitrate"],
@@ -123,12 +142,12 @@ window.MASTER_FERTILIZER_DB = {
       category: "n_source",
       N: 21.0, AN: 21.0, UN: 0, NN: 0,
       P: 0, WP: 0, CP: 0,
-      K: 0, Mg: 0, Ca: 0, Si: 0, Mn: 0, B: 0,
+      K: 0, Mg: 0, Ca: 0, Si: 0, S: 24.0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
       pricePerTon: 52000,
       flags: ["has_an"],
       forbiddenWith: [],
       cautionWith: [],
-      note: "化学的に極めて安定しており吸湿しにくい優秀なアンモニア態N源。ただしNが21%と低いため、硫安単体では高N銘柄（N16%以上など）は100%枠を超えてしまい作れない。"
+      note: "化学的に極めて安定しており吸湿しにくい優秀なアンモニア態N源（硫黄Sも24%含有）。Nが21%のため高N銘柄では重量枠を多く使う。"
     },
     {
       id: "ammonium_chloride",
@@ -136,7 +155,7 @@ window.MASTER_FERTILIZER_DB = {
       category: "n_source",
       N: 25.0, AN: 25.0, UN: 0, NN: 0,
       P: 0, WP: 0, CP: 0,
-      K: 0, Mg: 0, Ca: 0, Si: 0, Mn: 0, B: 0,
+      K: 0, Mg: 0, Ca: 0, Si: 0, S: 0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
       pricePerTon: 56000,
       flags: ["has_an", "has_chlorine"],
       forbiddenWith: [],
@@ -149,7 +168,7 @@ window.MASTER_FERTILIZER_DB = {
       category: "n_source",
       N: 34.0, AN: 17.0, UN: 0, NN: 17.0,
       P: 0, WP: 0, CP: 0,
-      K: 0, Mg: 0, Ca: 0, Si: 0, Mn: 0, B: 0,
+      K: 0, Mg: 0, Ca: 0, Si: 0, S: 0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
       pricePerTon: 95000,
       flags: ["has_an", "has_nn", "is_hygroscopic"],
       forbiddenWith: ["urea"],
@@ -162,7 +181,7 @@ window.MASTER_FERTILIZER_DB = {
       category: "n_source",
       N: 42.0, AN: 0, UN: 42.0, NN: 0,
       P: 0, WP: 0, CP: 0,
-      K: 0, Mg: 0, Ca: 0, Si: 0, Mn: 0, B: 0,
+      K: 0, Mg: 0, Ca: 0, Si: 0, S: 0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
       pricePerTon: 195000,
       flags: ["has_un"],
       forbiddenWith: [],
@@ -175,7 +194,7 @@ window.MASTER_FERTILIZER_DB = {
       category: "n_source",
       N: 31.0, AN: 0, UN: 0, NN: 0,
       P: 0, WP: 0, CP: 0,
-      K: 0, Mg: 0, Ca: 0, Si: 0, Mn: 0, B: 0,
+      K: 0, Mg: 0, Ca: 0, Si: 0, S: 0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
       pricePerTon: 175000,
       flags: [],
       forbiddenWith: [],
@@ -188,12 +207,12 @@ window.MASTER_FERTILIZER_DB = {
       category: "n_source",
       N: 21.0, AN: 0, UN: 0, NN: 0,
       P: 0, WP: 0, CP: 0,
-      K: 0, Mg: 0, Ca: 55.0, Si: 0, Mn: 0, B: 0,
+      K: 0, Mg: 0, Ca: 55.0, Si: 0, S: 0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
       pricePerTon: 135000,
       flags: ["has_cyanamide", "is_strong_alkali"],
       forbiddenWith: [],
       cautionWith: [],
-      note: "強アルカリ性のため、アンモニア態N原料（硫安・りん安）や水溶性P原料（過石・重過石）とは混合不可。ようりんや塩加との配合は可能。"
+      note: "強アルカリ性のため、アンモニア態N原料（硫安・りん安）や水溶性P原料（過石・重過石）とは混合不可。"
     },
 
     // ================= 2. リン酸・複合中間原料 (N-P / P源) =================
@@ -203,12 +222,12 @@ window.MASTER_FERTILIZER_DB = {
       category: "np_p_source",
       N: 18.0, AN: 18.0, UN: 0, NN: 0,
       P: 46.0, WP: 41.0, CP: 46.0,
-      K: 0, Mg: 0, Ca: 0, Si: 0, Mn: 0, B: 0,
+      K: 0, Mg: 0, Ca: 0, Si: 0, S: 0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
       pricePerTon: 118000,
       flags: ["has_an", "has_wp"],
       forbiddenWith: [],
       cautionWith: [],
-      note: "BB肥料・高度化成の主力中間原料。1トンあたりN 18%とP₂O₅ 46%を同時に供給でき、尿素との相性も良いため高成分銘柄（15-15-15〜18-18-18等）の製造に不可欠。"
+      note: "BB肥料・高度化成の主力中間原料。1トンあたりN 18%とP₂O₅ 46%を同時に供給でき、尿素との相性も良いため高成分銘柄の製造に不可欠。"
     },
     {
       id: "map",
@@ -216,7 +235,7 @@ window.MASTER_FERTILIZER_DB = {
       category: "np_p_source",
       N: 11.0, AN: 11.0, UN: 0, NN: 0,
       P: 50.0, WP: 44.0, CP: 50.0,
-      K: 0, Mg: 0, Ca: 0, Si: 0, Mn: 0, B: 0,
+      K: 0, Mg: 0, Ca: 0, Si: 0, S: 0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
       pricePerTon: 122000,
       flags: ["has_an", "has_wp"],
       forbiddenWith: [],
@@ -229,7 +248,7 @@ window.MASTER_FERTILIZER_DB = {
       category: "np_p_source",
       N: 0, AN: 0, UN: 0, NN: 0,
       P: 35.0, WP: 30.0, CP: 35.0,
-      K: 0, Mg: 0, Ca: 16.0, Si: 0, Mn: 0, B: 0,
+      K: 0, Mg: 0, Ca: 16.0, Si: 0, S: 1.5, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
       pricePerTon: 96000,
       flags: ["has_wp", "has_free_acid"],
       forbiddenWith: ["urea"],
@@ -242,12 +261,12 @@ window.MASTER_FERTILIZER_DB = {
       category: "np_p_source",
       N: 0, AN: 0, UN: 0, NN: 0,
       P: 17.5, WP: 14.5, CP: 17.5,
-      K: 0, Mg: 0, Ca: 28.0, Si: 0, Mn: 0, B: 0,
+      K: 0, Mg: 0, Ca: 28.0, Si: 0, S: 12.0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
       pricePerTon: 64000,
       flags: ["has_wp", "has_free_acid"],
       forbiddenWith: ["urea"],
       cautionWith: [],
-      note: "普通化成（8-8-8等）の定番リン酸原料。濃度が17.5%と低いため、過石だけでP12%以上を作ろうとすると重量枠の大半を消費する。"
+      note: "普通化成（8-8-8等）の定番リン酸原料。石膏分を含みCaO 28%・S 12%も同時供給できるが、P濃度が17.5%と低いため高P銘柄には不向き。"
     },
     {
       id: "fused_magnesium_phosphate",
@@ -255,12 +274,12 @@ window.MASTER_FERTILIZER_DB = {
       category: "np_p_source",
       N: 0, AN: 0, UN: 0, NN: 0,
       P: 20.0, WP: 0, CP: 20.0,
-      K: 0, Mg: 15.0, Ca: 30.0, Si: 20.0, Mn: 0, B: 0,
+      K: 0, Mg: 15.0, Ca: 30.0, Si: 20.0, S: 0, Mn: 0.2, B: 0.05, Fe: 1.0, Zn: 0, Cu: 0, Mo: 0,
       pricePerTon: 82000,
       flags: ["is_weak_alkali"],
       forbiddenWith: [],
       cautionWith: [],
-      note: "く溶性リン酸20%＋く溶性苦土15%＋ケイ酸20%。塩基性のため、硫安やりん安・過石と多量に混ぜるとアンモニア臭や水溶性リン酸の退行が起きる（BB配合では配合率制限または粒状品使用）。"
+      note: "く溶性リン酸20%＋く溶性苦土15%＋石灰30%＋ケイ酸20%。塩基性のため、硫安やりん安・過石と多量に混ぜるとアンモニア臭や水溶性リン酸の退行が起きる。"
     },
     {
       id: "multi_phosphate",
@@ -268,7 +287,7 @@ window.MASTER_FERTILIZER_DB = {
       category: "np_p_source",
       N: 0, AN: 0, UN: 0, NN: 0,
       P: 35.0, WP: 14.0, CP: 35.0,
-      K: 0, Mg: 4.5, Ca: 34.0, Si: 0, Mn: 0, B: 0,
+      K: 0, Mg: 4.5, Ca: 34.0, Si: 0, S: 0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
       pricePerTon: 112000,
       flags: ["has_wp", "is_weak_alkali"],
       forbiddenWith: [],
@@ -283,7 +302,7 @@ window.MASTER_FERTILIZER_DB = {
       category: "k_source",
       N: 0, AN: 0, UN: 0, NN: 0,
       P: 0, WP: 0, CP: 0,
-      K: 60.0, Mg: 0, Ca: 0, Si: 0, Mn: 0, B: 0,
+      K: 60.0, Mg: 0, Ca: 0, Si: 0, S: 0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
       pricePerTon: 88000,
       flags: ["has_chlorine"],
       forbiddenWith: [],
@@ -296,12 +315,12 @@ window.MASTER_FERTILIZER_DB = {
       category: "k_source",
       N: 0, AN: 0, UN: 0, NN: 0,
       P: 0, WP: 0, CP: 0,
-      K: 50.0, Mg: 0, Ca: 0, Si: 0, Mn: 0, B: 0,
+      K: 50.0, Mg: 0, Ca: 0, Si: 0, S: 17.5, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
       pricePerTon: 115000,
       flags: [],
       forbiddenWith: [],
       cautionWith: [],
-      note: "塩素を含まないカリ源（50%）。塩加より濃度が10%低いため、高K銘柄では塩加よりも必要重量枠が1.2倍大きくなる。"
+      note: "塩素を含まないカリ源（K 50%, S 17.5%）。塩加より濃度が10%低いため、高K銘柄では塩加よりも必要重量枠が1.2倍大きくなる。"
     },
     {
       id: "potassium_magnesium_sulfate",
@@ -309,12 +328,12 @@ window.MASTER_FERTILIZER_DB = {
       category: "k_source",
       N: 0, AN: 0, UN: 0, NN: 0,
       P: 0, WP: 0, CP: 0,
-      K: 22.0, Mg: 10.0, Ca: 0, Si: 0, Mn: 0, B: 0,
+      K: 22.0, Mg: 10.0, Ca: 0, Si: 0, S: 18.0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
       pricePerTon: 98000,
       flags: [],
       forbiddenWith: [],
       cautionWith: [],
-      note: "水溶性カリ(22%)と水溶性苦土(10%)を同時供給できる塩素フリー原料。"
+      note: "水溶性カリ(22%)と水溶性苦土(10%)、硫黄(18%)を同時供給できる塩素フリー原料。"
     },
     {
       id: "potassium_silicate",
@@ -322,7 +341,7 @@ window.MASTER_FERTILIZER_DB = {
       category: "k_source",
       N: 0, AN: 0, UN: 0, NN: 0,
       P: 0, WP: 0, CP: 0,
-      K: 20.0, Mg: 4.0, Ca: 0, Si: 32.0, Mn: 0, B: 0,
+      K: 20.0, Mg: 4.0, Ca: 0, Si: 32.0, S: 0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
       pricePerTon: 94000,
       flags: ["is_weak_alkali"],
       forbiddenWith: [],
@@ -335,7 +354,7 @@ window.MASTER_FERTILIZER_DB = {
       category: "k_source",
       N: 13.5, AN: 0, UN: 0, NN: 13.5,
       P: 0, WP: 0, CP: 0,
-      K: 45.0, Mg: 0, Ca: 0, Si: 0, Mn: 0, B: 0,
+      K: 45.0, Mg: 0, Ca: 0, Si: 0, S: 0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
       pricePerTon: 185000,
       flags: ["has_nn"],
       forbiddenWith: [],
@@ -343,14 +362,14 @@ window.MASTER_FERTILIZER_DB = {
       note: "硝酸態窒素とカリを同時に供給する高級原料。追肥用NK化成や水溶性肥料の設計に使用。"
     },
 
-    // ================= 4. 苦土・石灰・ケイ酸・微量要素 =================
+    // ================= 4. 苦土・石灰・ケイ酸・硫黄原料 (Mg/Ca/Si/S) =================
     {
       id: "magnesium_hydroxide",
       name: "水酸化マグネシウム（水マグ 58%）",
-      category: "mg_ca_micro",
+      category: "mg_ca_si",
       N: 0, AN: 0, UN: 0, NN: 0,
       P: 0, WP: 0, CP: 0,
-      K: 0, Mg: 58.0, Ca: 0, Si: 0, Mn: 0, B: 0,
+      K: 0, Mg: 58.0, Ca: 0, Si: 0, S: 0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
       pricePerTon: 95000,
       flags: ["is_weak_alkali"],
       forbiddenWith: [],
@@ -360,64 +379,196 @@ window.MASTER_FERTILIZER_DB = {
     {
       id: "magnesium_sulfate",
       name: "硫酸マグネシウム（硫マグ 20%）",
-      category: "mg_ca_micro",
+      category: "mg_ca_si",
       N: 0, AN: 0, UN: 0, NN: 0,
       P: 0, WP: 0, CP: 0,
-      K: 0, Mg: 20.0, Ca: 0, Si: 0, Mn: 0, B: 0,
+      K: 0, Mg: 20.0, Ca: 0, Si: 0, S: 13.0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
       pricePerTon: 78000,
       flags: [],
       forbiddenWith: [],
       cautionWith: [],
-      note: "中性の水溶性苦土源（20%）。アンモニア態窒素や水溶性リン酸と混ぜても化学反応（退行や揮散）を起こさない安全な苦土原料。"
+      note: "中性の水溶性苦土源（MgO 20%, S 13%）。アンモニア態窒素や水溶性リン酸と混ぜても化学反応（退行や揮散）を起こさない安全な苦土原料。"
+    },
+    {
+      id: "calcium_silicate",
+      name: "ケイカル（ケイ酸カルシウム・粒状）",
+      category: "mg_ca_si",
+      N: 0, AN: 0, UN: 0, NN: 0,
+      P: 0, WP: 0, CP: 0,
+      K: 0, Mg: 2.0, Ca: 40.0, Si: 34.0, S: 0, Mn: 0.5, B: 0, Fe: 1.5, Zn: 0, Cu: 0, Mo: 0,
+      pricePerTon: 38000,
+      flags: ["is_weak_alkali"],
+      forbiddenWith: [],
+      cautionWith: [],
+      note: "可溶性ケイ酸(34%)とアルカリ分(CaO 40%)、鉄・マンガンを含むケイ酸質肥料の代表原料。"
+    },
+    {
+      id: "silica_gel_fertilizer",
+      name: "高濃度シリカゲル肥料（多孔質ケイ酸 80%）",
+      category: "mg_ca_si",
+      N: 0, AN: 0, UN: 0, NN: 0,
+      P: 0, WP: 0, CP: 0,
+      K: 0, Mg: 0, Ca: 0, Si: 80.0, S: 0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
+      pricePerTon: 145000,
+      flags: [],
+      forbiddenWith: [],
+      cautionWith: [],
+      note: "中性かつ高濃度の水溶性・可溶性ケイ酸原料（SiO₂ 80%）。pHを上げずに少ない重量枠でケイ酸保証銘柄を作りたい場合に使用。"
     },
     {
       id: "dolomite_lime",
       name: "苦土石灰（粒状ドロマイト）",
-      category: "mg_ca_micro",
+      category: "mg_ca_si",
       N: 0, AN: 0, UN: 0, NN: 0,
       P: 0, WP: 0, CP: 0,
-      K: 0, Mg: 15.0, Ca: 35.0, Si: 0, Mn: 0, B: 0,
+      K: 0, Mg: 15.0, Ca: 35.0, Si: 0, S: 0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
       pricePerTon: 32000,
       flags: ["is_weak_alkali", "is_filler"],
       forbiddenWith: [],
       cautionWith: [],
-      note: "苦土補給兼アルカリ性増量材としても利用されるが、過石や硫安との多量混合時は反応に注意。"
+      note: "苦土(15%)＋石灰(35%)補給兼アルカリ性増量材。過石や硫安との多量混合時は反応に注意。"
     },
     {
       id: "slaked_lime",
       name: "消石灰",
-      category: "mg_ca_micro",
+      category: "mg_ca_si",
       N: 0, AN: 0, UN: 0, NN: 0,
       P: 0, WP: 0, CP: 0,
-      K: 0, Mg: 0, Ca: 65.0, Si: 0, Mn: 0, B: 0,
+      K: 0, Mg: 0, Ca: 65.0, Si: 0, S: 0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
       pricePerTon: 45000,
       flags: ["is_strong_alkali", "is_powder"],
       forbiddenWith: [],
       cautionWith: [],
       note: "強アルカリ性のため、アンモニア態窒素（硫安・塩安・りん安）や水溶性リン酸（過石・重過石）との配合は厳禁。"
     },
+
+    // ================= 5. 微量要素原料 (Mn / B / Fe / Zn / Cu / Mo) =================
     {
       id: "fte",
-      name: "FTE（微量要素ガラスフリット）",
-      category: "mg_ca_micro",
+      name: "FTE 1号（微量要素ガラスフリット複合材）",
+      category: "micronutrient",
       N: 0, AN: 0, UN: 0, NN: 0,
       P: 0, WP: 0, CP: 0,
-      K: 0, Mg: 0, Ca: 0, Si: 0, Mn: 18.0, B: 8.0,
+      K: 0, Mg: 0, Ca: 0, Si: 25.0, S: 0, Mn: 18.0, B: 8.0, Fe: 6.0, Zn: 0.2, Cu: 0.2, Mo: 0.1,
       pricePerTon: 240000,
       flags: [],
       forbiddenWith: [],
       cautionWith: [],
-      note: "く溶性マンガン18%・く溶性ホウ素8%を含有。微量要素入り銘柄（Mn 0.5%, B 0.2%等）の設計に数%配合する。"
+      note: "く溶性マンガン18%・く溶性ホウ素8%・鉄6%・亜鉛・銅・モリブデンを含有。1〜3%（10〜30kg/t）の配合で微量要素保証銘柄を安全に設計できる。"
+    },
+    {
+      id: "manganese_sulfate",
+      name: "硫酸マンガン（MnO 28%）",
+      category: "micronutrient",
+      N: 0, AN: 0, UN: 0, NN: 0,
+      P: 0, WP: 0, CP: 0,
+      K: 0, Mg: 0, Ca: 0, Si: 0, S: 14.0, Mn: 28.0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
+      pricePerTon: 165000,
+      flags: [],
+      forbiddenWith: [],
+      cautionWith: [],
+      note: "水溶性マンガン源（MnO 28%）。例えばMnO 0.5%保証にする場合、約1.8%（18kg/t）配合する。"
+    },
+    {
+      id: "borax",
+      name: "ホウ砂（B₂O₃ 36%）",
+      category: "micronutrient",
+      N: 0, AN: 0, UN: 0, NN: 0,
+      P: 0, WP: 0, CP: 0,
+      K: 0, Mg: 0, Ca: 0, Si: 0, S: 0, Mn: 0, B: 36.0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
+      pricePerTon: 180000,
+      flags: [],
+      forbiddenWith: [],
+      cautionWith: [],
+      note: "水溶性ホウ素源（B₂O₃ 36%）。B₂O₃ 0.2%保証なら約0.56%（5.6kg/t）配合する。"
+    },
+    {
+      id: "boric_acid",
+      name: "ホウ酸（B₂O₃ 55%）",
+      category: "micronutrient",
+      N: 0, AN: 0, UN: 0, NN: 0,
+      P: 0, WP: 0, CP: 0,
+      K: 0, Mg: 0, Ca: 0, Si: 0, S: 0, Mn: 0, B: 55.0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
+      pricePerTon: 230000,
+      flags: [],
+      forbiddenWith: [],
+      cautionWith: [],
+      note: "高濃度の水溶性ホウ素源（B₂O₃ 55%）。液肥原料や高成分化成への微量添加に使用。"
+    },
+    {
+      id: "ferrous_sulfate",
+      name: "硫酸第一鉄（緑礬・Fe 20%）",
+      category: "micronutrient",
+      N: 0, AN: 0, UN: 0, NN: 0,
+      P: 0, WP: 0, CP: 0,
+      K: 0, Mg: 0, Ca: 0, Si: 0, S: 11.5, Mn: 0, B: 0, Fe: 20.0, Zn: 0, Cu: 0, Mo: 0,
+      pricePerTon: 85000,
+      flags: [],
+      forbiddenWith: [],
+      cautionWith: [],
+      note: "水溶性鉄源（Fe 20%, S 11.5%）。鉄強化銘柄や芝生用肥料・水稲秋落ち対策銘柄に配合される。"
+    },
+    {
+      id: "chelated_iron_edta",
+      name: "キレート鉄（EDTA-Fe 13%）",
+      category: "micronutrient",
+      N: 0, AN: 0, UN: 0, NN: 0,
+      P: 0, WP: 0, CP: 0,
+      K: 0, Mg: 0, Ca: 0, Si: 0, S: 0, Mn: 0, B: 0, Fe: 13.0, Zn: 0, Cu: 0, Mo: 0,
+      pricePerTon: 680000,
+      flags: [],
+      forbiddenWith: [],
+      cautionWith: [],
+      note: "リン酸やアルカリと反応しても不溶化しないキレート態の鉄原料（Fe 13%）。"
+    },
+    {
+      id: "zinc_sulfate",
+      name: "硫酸亜鉛（Zn 22%）",
+      category: "micronutrient",
+      N: 0, AN: 0, UN: 0, NN: 0,
+      P: 0, WP: 0, CP: 0,
+      K: 0, Mg: 0, Ca: 0, Si: 0, S: 11.0, Mn: 0, B: 0, Fe: 0, Zn: 22.0, Cu: 0, Mo: 0,
+      pricePerTon: 195000,
+      flags: [],
+      forbiddenWith: [],
+      cautionWith: [],
+      note: "水溶性亜鉛源（Zn 22%, S 11%）。亜鉛欠乏対策・微量要素入り銘柄の設計に使用。"
+    },
+    {
+      id: "copper_sulfate",
+      name: "硫酸銅（Cu 25%）",
+      category: "micronutrient",
+      N: 0, AN: 0, UN: 0, NN: 0,
+      P: 0, WP: 0, CP: 0,
+      K: 0, Mg: 0, Ca: 0, Si: 0, S: 12.8, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 25.0, Mo: 0,
+      pricePerTon: 320000,
+      flags: [],
+      forbiddenWith: [],
+      cautionWith: [],
+      note: "水溶性銅源（Cu 25%, S 12.8%）。微量要素としての銅添加に使用。"
+    },
+    {
+      id: "sodium_molybdate",
+      name: "モリブデン酸ナトリウム（Mo 39%）",
+      category: "micronutrient",
+      N: 0, AN: 0, UN: 0, NN: 0,
+      P: 0, WP: 0, CP: 0,
+      K: 0, Mg: 0, Ca: 0, Si: 0, S: 0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 39.0,
+      pricePerTon: 1200000,
+      flags: [],
+      forbiddenWith: [],
+      cautionWith: [],
+      note: "水溶性モリブデン源（Mo 39%）。硝酸還元酵素の必須微量要素として極微量配合される。"
     },
 
-    // ================= 5. 有機質原料 =================
+    // ================= 6. 有機質原料 =================
     {
       id: "rapeseed_meal",
       name: "菜種油かす（粉末/ペレット）",
       category: "organic",
       N: 5.3, AN: 0, UN: 0, NN: 0,
       P: 2.0, WP: 0, CP: 0,
-      K: 1.0, Mg: 0.5, Ca: 0.8, Si: 0, Mn: 0, B: 0,
+      K: 1.0, Mg: 0.5, Ca: 0.8, Si: 0, S: 0.5, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
       pricePerTon: 78000,
       flags: ["is_organic"],
       forbiddenWith: [],
@@ -430,12 +581,12 @@ window.MASTER_FERTILIZER_DB = {
       category: "organic",
       N: 8.0, AN: 0, UN: 0, NN: 0,
       P: 6.0, WP: 0, CP: 0,
-      K: 0.5, Mg: 0.3, Ca: 6.0, Si: 0, Mn: 0, B: 0,
+      K: 0.5, Mg: 0.3, Ca: 6.0, Si: 0, S: 0.8, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
       pricePerTon: 165000,
       flags: ["is_organic"],
       forbiddenWith: [],
       cautionWith: [],
-      note: "動物性有機原料。菜種油かすよりN(8%)・P(6%)が高いため、有機入り化成で有機比率を高める際に有利。"
+      note: "動物性有機原料。菜種油かすよりN(8%)・P(6%)・Ca(6%)が高いため、有機入り化成で有機比率を高める際に有利。"
     },
     {
       id: "steamed_bone_meal",
@@ -443,12 +594,12 @@ window.MASTER_FERTILIZER_DB = {
       category: "organic",
       N: 4.0, AN: 0, UN: 0, NN: 0,
       P: 20.0, WP: 0, CP: 18.0,
-      K: 0, Mg: 0.5, Ca: 26.0, Si: 0, Mn: 0, B: 0,
+      K: 0, Mg: 0.5, Ca: 26.0, Si: 0, S: 0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
       pricePerTon: 125000,
       flags: ["is_organic"],
       forbiddenWith: [],
       cautionWith: [],
-      note: "有機質リン酸源（P 20%）。有機100%配合肥料でリン酸を高めたい場合の必須原料。"
+      note: "有機質リン酸・カルシウム源（P 20%, CaO 26%）。有機100%配合肥料でリン酸を高めたい場合の必須原料。"
     },
     {
       id: "feather_meal",
@@ -456,22 +607,22 @@ window.MASTER_FERTILIZER_DB = {
       category: "organic",
       N: 12.5, AN: 0, UN: 0, NN: 0,
       P: 0.5, WP: 0, CP: 0,
-      K: 0, Mg: 0, Ca: 0.5, Si: 0, Mn: 0, B: 0,
+      K: 0, Mg: 0, Ca: 0.5, Si: 0, S: 2.0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
       pricePerTon: 130000,
       flags: ["is_organic"],
       forbiddenWith: [],
       cautionWith: [],
-      note: "高濃度の有機態窒素源（N 12.5%）。少ない配合重量で有機態Nを稼げるため、有機入り高成分化成の処方設計で極めて重宝する。"
+      note: "高濃度の有機態窒素源（N 12.5%, S 2.0%）。少ない配合重量で有機態Nを稼げるため、有機入り高成分化成の処方設計で極めて重宝する。"
     },
 
-    // ================= 6. 増量材・フィラー（1,000kg バランス調整材） =================
+    // ================= 7. 増量材・フィラー（1,000kg バランス調整材） =================
     {
       id: "filler_clay",
       name: "クレー・カオリン（不活性増量材）",
       category: "filler",
       N: 0, AN: 0, UN: 0, NN: 0,
       P: 0, WP: 0, CP: 0,
-      K: 0, Mg: 0, Ca: 0, Si: 0, Mn: 0, B: 0,
+      K: 0, Mg: 0, Ca: 0, Si: 0, S: 0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
       pricePerTon: 18000,
       flags: ["is_filler"],
       forbiddenWith: [],
@@ -484,12 +635,12 @@ window.MASTER_FERTILIZER_DB = {
       category: "filler",
       N: 0, AN: 0, UN: 0, NN: 0,
       P: 0, WP: 0, CP: 0,
-      K: 0, Mg: 0, Ca: 30.0, Si: 0, Mn: 0, B: 0,
+      K: 0, Mg: 0, Ca: 30.0, Si: 0, S: 18.5, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
       pricePerTon: 25000,
       flags: ["is_filler"],
       forbiddenWith: [],
       cautionWith: [],
-      note: "中性のためアンモニア態窒素や水溶性リン酸と反応しない安全な増量材・造粒補助材。副成分として石灰(CaO 30%)も付与できる。"
+      note: "中性のためアンモニア態窒素や水溶性リン酸と反応しない安全な増量材・造粒補助材。副成分として石灰(CaO 30%)と硫黄(S 18.5%)も付与できる。"
     },
     {
       id: "filler_zeolite",
@@ -497,7 +648,7 @@ window.MASTER_FERTILIZER_DB = {
       category: "filler",
       N: 0, AN: 0, UN: 0, NN: 0,
       P: 0, WP: 0, CP: 0,
-      K: 1.0, Mg: 0.5, Ca: 1.5, Si: 0, Mn: 0, B: 0,
+      K: 1.0, Mg: 0.5, Ca: 1.5, Si: 0, S: 0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
       pricePerTon: 28000,
       flags: ["is_filler"],
       forbiddenWith: [],
@@ -506,16 +657,16 @@ window.MASTER_FERTILIZER_DB = {
     },
     {
       id: "filler_calcium_carbonate",
-      name: "炭酸カルシウム（重カル・増量材）",
+      name: "炭酸カルシウム（重カル・増量材 CaO 53%）",
       category: "filler",
       N: 0, AN: 0, UN: 0, NN: 0,
       P: 0, WP: 0, CP: 0,
-      K: 0, Mg: 0, Ca: 53.0, Si: 0, Mn: 0, B: 0,
+      K: 0, Mg: 0, Ca: 53.0, Si: 0, S: 0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
       pricePerTon: 16000,
       flags: ["is_weak_alkali", "is_filler"],
       forbiddenWith: [],
       cautionWith: [],
-      note: "安価な増量材だが弱アルカリ性のため、遊離酸を持つ過石・重過石と混ぜると炭酸ガス発泡やリン酸退行を起こすことがある。"
+      note: "安価な石灰供給兼増量材（CaO 53%）。弱アルカリ性のため、遊離酸を持つ過石・重過石と混ぜると炭酸ガス発泡やリン酸退行を起こすことがある。"
     }
   ],
 
@@ -524,7 +675,8 @@ window.MASTER_FERTILIZER_DB = {
     {
       id: "grade_8_8_8",
       name: "普通化成 8-8-8（硫安・過石・塩加ベース）",
-      target: { N: 8.0, P: 8.0, K: 8.0, Mg: 0 },
+      target: { N: 8.0, P: 8.0, K: 8.0, Mg: 0, Ca: 0, Si: 0, S: 0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0 },
+      enabledExtras: [],
       recipe: [
         { id: "ammonium_sulfate", ratio: 38.5 },
         { id: "single_superphosphate", ratio: 46.0 },
@@ -535,7 +687,8 @@ window.MASTER_FERTILIZER_DB = {
     {
       id: "grade_15_15_15",
       name: "高度化成・BB 15-15-15（尿素・DAP・塩加ベース）",
-      target: { N: 15.0, P: 15.0, K: 15.0, Mg: 0 },
+      target: { N: 15.0, P: 15.0, K: 15.0, Mg: 0, Ca: 0, Si: 0, S: 0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0 },
+      enabledExtras: [],
       recipe: [
         { id: "dap", ratio: 32.8 },
         { id: "urea", ratio: 20.0 },
@@ -546,7 +699,8 @@ window.MASTER_FERTILIZER_DB = {
     {
       id: "grade_20_20_20_limit",
       name: "【限界検証】超高成分 20-20-20（100%超過で製造不可の例）",
-      target: { N: 20.0, P: 20.0, K: 20.0, Mg: 0 },
+      target: { N: 20.0, P: 20.0, K: 20.0, Mg: 0, Ca: 0, Si: 0, S: 0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0 },
+      enabledExtras: [],
       recipe: [
         { id: "dap", ratio: 43.5 },
         { id: "urea", ratio: 26.5 },
@@ -554,20 +708,25 @@ window.MASTER_FERTILIZER_DB = {
       ]
     },
     {
-      id: "grade_12_16_14_mg3",
-      name: "苦土入り高度 12-16-14-苦土3（塩素フリー硫酸系）",
-      target: { N: 12.0, P: 16.0, K: 14.0, Mg: 3.0 },
+      id: "grade_12_16_14_micro",
+      name: "苦土・マンガン・ホウ素・鉄入り高度 12-16-14 (Mg3-Mn0.5-B0.2-Fe0.5)",
+      target: { N: 12.0, P: 16.0, K: 14.0, Mg: 3.0, Ca: 0, Si: 0, S: 0, Mn: 0.5, B: 0.2, Fe: 0.5, Zn: 0, Cu: 0, Mo: 0 },
+      enabledExtras: ["Mn", "B", "Fe"],
       recipe: [
         { id: "map", ratio: 32.0 },
         { id: "ammonium_sulfate", ratio: 40.5 },
         { id: "potassium_sulfate", ratio: 28.0 },
-        { id: "magnesium_hydroxide", ratio: 5.2 }
+        { id: "magnesium_hydroxide", ratio: 5.2 },
+        { id: "manganese_sulfate", ratio: 1.8 },
+        { id: "borax", ratio: 0.6 },
+        { id: "ferrous_sulfate", ratio: 2.5 }
       ]
     },
     {
       id: "grade_organic_8_8_8",
       name: "有機入り化成 8-8-8（有機態N 40%配合・ギリギリ成立例）",
-      target: { N: 8.0, P: 8.0, K: 8.0, Mg: 0 },
+      target: { N: 8.0, P: 8.0, K: 8.0, Mg: 0, Ca: 0, Si: 0, S: 0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0 },
+      enabledExtras: [],
       recipe: [
         { id: "rapeseed_meal", ratio: 30.0 },
         { id: "fish_meal", ratio: 20.0 },

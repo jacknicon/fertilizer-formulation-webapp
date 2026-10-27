@@ -1,8 +1,8 @@
 /**
- * 化成肥料・BB肥料 処方設計＆成分限界シミュレーター (FertiFormulate Pro)
+ * 化成肥料・BB肥料 処方設計＆成分限界シミュレーター (FertiFormulate Pro v2.2)
  */
 (function () {
-  const STORAGE_MASTER_KEY = "fertiformulate_master_materials_v2";
+  const STORAGE_MASTER_KEY = "fertiformulate_master_materials_v22";
   const STORAGE_ADMIN_TOKEN = "fertiformulate_admin_unlocked";
   const STORAGE_APP_GATE_KEY = "fertiformulate_app_gate_unlocked_v1";
   const APP_GATE_PASSCODE = "miyazawakenji";
@@ -12,12 +12,30 @@
     "#1d4ed8", "#d97706", "#ca8a04", "#0d9488", "#7c3aed", "#db2777", "#475569", "#15803d"
   ];
 
+  // 追加可能な副成分・微量要素の定義と初期デフォルト目標値
+  const EXTRA_NUTRIENT_DEFS = [
+    { key: "Ca", label: "石灰 (CaO)", short: "CaO", step: 0.5, defaultTarget: 10.0, sourceId: "filler_calcium_carbonate" },
+    { key: "Si", label: "ケイ酸 (SiO₂)", short: "SiO₂", step: 0.5, defaultTarget: 10.0, sourceId: "calcium_silicate" },
+    { key: "S", label: "硫黄 (S)", short: "S", step: 0.5, defaultTarget: 5.0, sourceId: "filler_gypsum" },
+    { key: "Mn", label: "マンガン (MnO)", short: "MnO", step: 0.1, defaultTarget: 0.5, sourceId: "manganese_sulfate" },
+    { key: "B", label: "ホウ素 (B₂O₃)", short: "B₂O₃", step: 0.05, defaultTarget: 0.2, sourceId: "borax" },
+    { key: "Fe", label: "鉄 (Fe)", short: "Fe", step: 0.1, defaultTarget: 0.5, sourceId: "ferrous_sulfate" },
+    { key: "Zn", label: "亜鉛 (Zn)", short: "Zn", step: 0.05, defaultTarget: 0.1, sourceId: "zinc_sulfate" },
+    { key: "Cu", label: "銅 (Cu)", short: "Cu", step: 0.05, defaultTarget: 0.1, sourceId: "copper_sulfate" },
+    { key: "Mo", label: "モリブデン (Mo)", short: "Mo", step: 0.01, defaultTarget: 0.05, sourceId: "sodium_molybdate" }
+  ];
+
+  const ALL_NUTRIENT_KEYS = ["N", "P", "K", "Mg", "Ca", "Si", "S", "Mn", "B", "Fe", "Zn", "Cu", "Mo"];
+
   const state = {
     isAdmin: sessionStorage.getItem(STORAGE_ADMIN_TOKEN) === "true",
-    target: { N: 15.0, P: 15.0, K: 15.0, Mg: 0.0 },
+    target: {
+      N: 15.0, P: 15.0, K: 15.0, Mg: 0.0,
+      Ca: 0, Si: 0, S: 0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0
+    },
+    enabledExtras: [], // 例: ["Mn", "B", "Fe"]
     overageMode: "none", // none | plus_02 | plus_03 | mult_103
     requireChlorineFree: false,
-    // recipe: [{ id: materialId, ratio: weightPercent (0-100+) }]
     recipe: [],
     recipeCategoryFilter: "all",
     masterSearch: ""
@@ -41,7 +59,6 @@
   function saveMasterDatabaseToStorage() {
     try {
       localStorage.setItem(STORAGE_MASTER_KEY, JSON.stringify(window.MASTER_FERTILIZER_DB.materials));
-      // ローカルサーバー起動時はサーバー側APIにも同期を試みる
       if (state.isAdmin) {
         fetch("/api/materials", {
           method: "POST",
@@ -72,26 +89,27 @@
   // 安全マージン（盛り込み）適用後の必要設計成分値を返す
   function getRequiredDesignTarget(baseTarget) {
     const T = baseTarget || state.target;
-    const apply = (val) => {
-      if (val <= 0) return 0;
-      if (state.overageMode === "plus_02") return round2(val + 0.2);
-      if (state.overageMode === "plus_03") return round2(val + 0.3);
+    const apply = (val, isMicro) => {
+      if (!val || val <= 0) return 0;
+      if (state.overageMode === "plus_02") return round2(val + (isMicro ? Math.min(0.05, val * 0.1) : 0.2));
+      if (state.overageMode === "plus_03") return round2(val + (isMicro ? Math.min(0.08, val * 0.15) : 0.3));
       if (state.overageMode === "mult_103") return round2(val * 1.03);
       return val;
     };
-    return {
-      N: apply(T.N),
-      P: apply(T.P),
-      K: apply(T.K),
-      Mg: apply(T.Mg)
-    };
+    const out = {};
+    ALL_NUTRIENT_KEYS.forEach((k) => {
+      const isExtra = !["N", "P", "K", "Mg"].includes(k);
+      if (isExtra && !state.enabledExtras.includes(k) && !baseTarget) {
+        out[k] = 0;
+      } else {
+        const isMicro = ["Mn", "B", "Fe", "Zn", "Cu", "Mo"].includes(k);
+        out[k] = apply(T[k] || 0, isMicro);
+      }
+    });
+    return out;
   }
 
-  // ==================== 連立逆算ソルバー（指定原料で目標N-P-K-Mgを解く） ====================
-  /**
-   * 指定された原料セットで目標成分 (reqTarget: {N, P, K, Mg}) を達成するための必要重量比率(%)を計算する
-   * 戻り値: { feasible, totalRatio, items: [{id, ratio}], errorReason, maxScaleFactor }
-   */
+  // ==================== 連立逆算ソルバー（指定原料＋追加副成分・微量要素を解く） ====================
   function solveFormulation(reqTarget, config) {
     const nMat = getMaterial(config.nId);
     const pMat = getMaterial(config.pId);
@@ -103,87 +121,86 @@
     }
 
     const items = [];
-    let suppliedN = 0;
-    let suppliedP = 0;
-    let suppliedK = 0;
-    let suppliedMg = 0;
+    const supplied = {};
+    ALL_NUTRIENT_KEYS.forEach((k) => (supplied[k] = 0));
+
+    const addItemAmount = (mat, ratio) => {
+      if (!mat || ratio <= 0) return;
+      const r = round2(ratio);
+      const existing = items.find((x) => x.id === mat.id);
+      if (existing) {
+        existing.ratio = round2(existing.ratio + r);
+      } else {
+        items.push({ id: mat.id, ratio: r });
+      }
+      ALL_NUTRIENT_KEYS.forEach((k) => {
+        supplied[k] += (ratio * (mat[k] || 0)) / 100;
+      });
+    };
 
     // 1. 固定有機枠がある場合は先に計上
     if (config.organicId && config.organicRatio > 0) {
       const orgMat = getMaterial(config.organicId);
       if (orgMat) {
-        const r = config.organicRatio;
-        items.push({ id: orgMat.id, ratio: r });
-        suppliedN += (r * orgMat.N) / 100;
-        suppliedP += (r * orgMat.P) / 100;
-        suppliedK += (r * orgMat.K) / 100;
-        suppliedMg += (r * orgMat.Mg) / 100;
+        addItemAmount(orgMat, config.organicRatio);
       }
     }
 
     // 2. カリ源 (K) の必要量を算出
-    const remK = Math.max(0, reqTarget.K - suppliedK);
-    let kRatio = 0;
+    const remK = Math.max(0, (reqTarget.K || 0) - supplied.K);
     if (remK > 0) {
       if (kMat.K <= 0) {
         return { feasible: false, totalRatio: 999, items: [], errorReason: "カリ源にK成分が含まれていません" };
       }
-      kRatio = (remK / kMat.K) * 100;
-      items.push({ id: kMat.id, ratio: round2(kRatio) });
-      suppliedN += (kRatio * kMat.N) / 100;
-      suppliedP += (kRatio * kMat.P) / 100;
-      suppliedMg += (kRatio * kMat.Mg) / 100;
+      addItemAmount(kMat, (remK / kMat.K) * 100);
     }
 
-    // 3. リン酸源 (P) の必要量を算出（DAPやMAPの場合はNも同時に供給される）
-    const remP = Math.max(0, reqTarget.P - suppliedP);
-    let pRatio = 0;
+    // 3. リン酸源 (P) の必要量を算出
+    const remP = Math.max(0, (reqTarget.P || 0) - supplied.P);
     if (remP > 0) {
       if (pMat.P <= 0) {
         return { feasible: false, totalRatio: 999, items: [], errorReason: "リン酸源にP成分が含まれていません" };
       }
-      pRatio = (remP / pMat.P) * 100;
-      items.push({ id: pMat.id, ratio: round2(pRatio) });
-      suppliedN += (pRatio * pMat.N) / 100;
-      suppliedMg += (pRatio * pMat.Mg) / 100;
+      addItemAmount(pMat, (remP / pMat.P) * 100);
     }
 
-    // 随伴Nが目標Nを大幅に超えていないかチェック（例: 低N・高P銘柄にDAPを使った場合）
+    // 随伴N超過チェック
     let overNWarning = null;
-    if (suppliedN > reqTarget.N + 0.35) {
-      overNWarning = `リン酸源（${pMat.name}等）に付随する窒素だけで N ${round1(suppliedN)}% となり、目標N (${reqTarget.N}%) を超過します（MAPや重過石への変更を推奨）。`;
+    if (supplied.N > (reqTarget.N || 0) + 0.35) {
+      overNWarning = `リン酸源（${pMat.name}等）に付随する窒素だけで N ${round1(supplied.N)}% となり、目標N (${reqTarget.N}%) を超過します（MAPや重過石への変更を推奨）。`;
     }
 
     // 4. 窒素源 (N) の必要量を算出
-    const remN = Math.max(0, reqTarget.N - suppliedN);
-    let nRatio = 0;
+    const remN = Math.max(0, (reqTarget.N || 0) - supplied.N);
     if (remN > 0) {
       if (nMat.N <= 0) {
         return { feasible: false, totalRatio: 999, items: [], errorReason: "窒素源にN成分が含まれていません" };
       }
-      nRatio = (remN / nMat.N) * 100;
-      // 既に同じ原料がリストにあれば合算
-      const existingN = items.find((x) => x.id === nMat.id);
-      if (existingN) {
-        existingN.ratio = round2(existingN.ratio + nRatio);
-      } else {
-        items.push({ id: nMat.id, ratio: round2(nRatio) });
-      }
-      suppliedMg += (nRatio * nMat.Mg) / 100;
+      addItemAmount(nMat, (remN / nMat.N) * 100);
     }
 
     // 5. 苦土源 (Mg) の必要量を算出
-    const remMg = Math.max(0, reqTarget.Mg - suppliedMg);
-    let mgRatio = 0;
+    const remMg = Math.max(0, (reqTarget.Mg || 0) - supplied.Mg);
     if (remMg > 0 && mgMat && mgMat.Mg > 0) {
-      mgRatio = (remMg / mgMat.Mg) * 100;
-      const existingMg = items.find((x) => x.id === mgMat.id);
-      if (existingMg) {
-        existingMg.ratio = round2(existingMg.ratio + mgRatio);
-      } else {
-        items.push({ id: mgMat.id, ratio: round2(mgRatio) });
-      }
+      addItemAmount(mgMat, (remMg / mgMat.Mg) * 100);
     }
+
+    // 6. 追加指定された副成分・微量要素 (Si, Ca, Mn, B, Fe, Zn, Cu, Mo, S) の自動補填
+    // Si(ケイカル等)はCaやFe/Mnも含むため、Si → Mn/B/Fe/Zn/Cu/Mo → Ca → S の順で補填する
+    const extraOrder = ["Si", "Mn", "B", "Fe", "Zn", "Cu", "Mo", "Ca", "S"];
+    extraOrder.forEach((key) => {
+      const targetVal = reqTarget[key] || 0;
+      if (targetVal <= 0) return;
+      const rem = Math.max(0, targetVal - (supplied[key] || 0));
+      if (rem <= 0.005) return;
+
+      const def = EXTRA_NUTRIENT_DEFS.find((d) => d.key === key);
+      if (!def) return;
+      const srcMat = getMaterial(def.sourceId);
+      if (srcMat && (srcMat[key] || 0) > 0) {
+        addItemAmount(srcMat, (rem / srcMat[key]) * 100);
+      }
+    });
 
     const totalRatio = round2(items.reduce((acc, it) => acc + it.ratio, 0));
     const feasible = totalRatio <= 100.0 && !overNWarning;
@@ -197,7 +214,7 @@
   }
 
   // ==================== 配合禁忌＆製造リスク検証エンジン ====================
-  function evaluateCompatibilityAndRisks(activeItems, totals) {
+  function evaluateCompatibilityAndRisks(activeItems) {
     const alerts = [];
     const mats = activeItems
       .filter((it) => it.ratio > 0)
@@ -205,7 +222,6 @@
 
     if (mats.length === 0) return alerts;
 
-    // 1. 直接指定されている配合禁忌ペア (forbiddenWith) のチェック
     for (let i = 0; i < mats.length; i++) {
       for (let j = i + 1; j < mats.length; j++) {
         const A = mats[i];
@@ -226,7 +242,6 @@
       }
     }
 
-    // 2. チェックボックス特性フラグによる化学反応禁忌の判定
     const anMats = mats.filter((m) => m.flags && m.flags.includes("has_an"));
     const wpMats = mats.filter((m) => m.flags && m.flags.includes("has_wp"));
     const freeAcidMats = mats.filter((m) => m.flags && m.flags.includes("has_free_acid"));
@@ -260,7 +275,6 @@
       });
     }
 
-    // 3. 弱アルカリ・塩基性資材との多量配合注意
     if ((anMats.length > 0 || wpMats.length > 0) && weakAlkaliMats.length > 0) {
       const weakAlkaliSum = weakAlkaliMats.reduce((s, m) => s + m.ratio, 0);
       if (weakAlkaliSum >= 12) {
@@ -272,7 +286,6 @@
       }
     }
 
-    // 4. 塩素フリー（硫酸系）制約チェック
     const clMats = mats.filter((m) => m.flags && m.flags.includes("has_chlorine"));
     if (state.requireChlorineFree && clMats.length > 0) {
       alerts.push({
@@ -282,7 +295,6 @@
       });
     }
 
-    // 5. 吸湿性・粉状分級注意
     const hygroMats = mats.filter((m) => m.flags && m.flags.includes("is_hygroscopic"));
     const hygroSum = hygroMats.reduce((s, m) => s + m.ratio, 0);
     if (hygroSum >= 35) {
@@ -305,7 +317,7 @@
     return alerts;
   }
 
-  // ==================== UI レンダリング (TAB 1: 処方設計シート) ====================
+  // ==================== UI レンダリング ====================
   function renderAuthHeader() {
     const badge = document.getElementById("role-status-badge");
     const btn = document.getElementById("btn-toggle-auth");
@@ -334,8 +346,46 @@
     }
   }
 
+  function renderExtraNutrientSelector() {
+    const togglesRow = document.getElementById("extra-nutrient-toggles");
+    const targetsGrid = document.getElementById("extra-targets-grid");
+    if (!togglesRow || !targetsGrid) return;
+
+    togglesRow.innerHTML = EXTRA_NUTRIENT_DEFS.map((d) => {
+      const checked = state.enabledExtras.includes(d.key);
+      return `
+        <label class="extra-toggle-chip ${checked ? "active" : ""}">
+          <input type="checkbox" data-extra-toggle="${d.key}" ${checked ? "checked" : ""} />
+          <span>${d.label}</span>
+        </label>
+      `;
+    }).join("");
+
+    const activeDefs = EXTRA_NUTRIENT_DEFS.filter((d) => state.enabledExtras.includes(d.key));
+    targetsGrid.innerHTML = activeDefs
+      .map(
+        (d) => `
+        <div class="grade-input-box extra-theme">
+          <label for="target-${d.key}">${d.label}</label>
+          <div class="unit-input">
+            <input
+              type="number"
+              id="target-${d.key}"
+              data-extra-input="${d.key}"
+              value="${state.target[d.key] || 0}"
+              min="0"
+              max="80"
+              step="${d.step}"
+            />
+            <span>%</span>
+          </div>
+        </div>
+      `
+      )
+      .join("");
+  }
+
   function initDropdowns() {
-    // 銘柄プリセット
     const presetSel = document.getElementById("preset-grade-select");
     presetSel.innerHTML =
       `<option value="">-- プリセット銘柄を選択 --</option>` +
@@ -343,7 +393,6 @@
         .map((p) => `<option value="${p.id}">${p.name}</option>`)
         .join("");
 
-    // 処方追加カテゴリフィルタ
     const catFilter = document.getElementById("recipe-category-filter");
     catFilter.innerHTML =
       `<option value="all">すべての原料区分</option>` +
@@ -351,7 +400,6 @@
         .map((c) => `<option value="${c.id}">${c.name}</option>`)
         .join("");
 
-    // 新規登録フォームのカテゴリ
     const matCat = document.getElementById("mat-category");
     matCat.innerHTML = window.MASTER_FERTILIZER_DB.categories
       .map((c) => `<option value="${c.id}">${c.name}</option>`)
@@ -369,11 +417,9 @@
     sel.innerHTML = list
       .map((m) => {
         const spec = [];
-        if (m.N) spec.push(`N:${m.N}%`);
-        if (m.P) spec.push(`P:${m.P}%`);
-        if (m.K) spec.push(`K:${m.K}%`);
-        if (m.Mg) spec.push(`Mg:${m.Mg}%`);
-        if (m.Ca) spec.push(`Ca:${m.Ca}%`);
+        ALL_NUTRIENT_KEYS.forEach((k) => {
+          if ((m[k] || 0) > 0) spec.push(`${k}:${m[k]}%`);
+        });
         if (spec.length === 0) spec.push("増量材/0%");
         return `<option value="${m.id}">${m.name} [${spec.join(" / ")}]</option>`;
       })
@@ -401,16 +447,24 @@
           const kgPerTon = round1(r * 10);
           const kgPerBag = round2((r * 20) / 100);
 
-          const supN = round2((r * mat.N) / 100);
-          const supP = round2((r * mat.P) / 100);
-          const supK = round2((r * mat.K) / 100);
-          const supMg = round2((r * mat.Mg) / 100);
-
+          // 原料が含有している成分一覧と供給量ラベル
+          const matSpecs = [];
+          const suppliedParts = [];
           const fitBtns = [];
-          if (mat.N > 0) fitBtns.push(`<button type="button" class="btn-fit-mini" data-idx="${idx}" data-fit="N">N合わせ</button>`);
-          if (mat.P > 0) fitBtns.push(`<button type="button" class="btn-fit-mini" data-idx="${idx}" data-fit="P">P合わせ</button>`);
-          if (mat.K > 0) fitBtns.push(`<button type="button" class="btn-fit-mini" data-idx="${idx}" data-fit="K">K合わせ</button>`);
-          if (mat.Mg > 0) fitBtns.push(`<button type="button" class="btn-fit-mini" data-idx="${idx}" data-fit="Mg">Mg合わせ</button>`);
+
+          ALL_NUTRIENT_KEYS.forEach((k) => {
+            const contentPct = mat[k] || 0;
+            if (contentPct > 0) {
+              matSpecs.push(`${k} ${contentPct}%`);
+              const supVal = round2((r * contentPct) / 100);
+              suppliedParts.push(`${k}:<b>${supVal}</b>`);
+              // 基本4成分、または現在有効化されている追加成分の「〇〇合わせ」ボタンを表示
+              if (["N", "P", "K", "Mg"].includes(k) || state.enabledExtras.includes(k)) {
+                fitBtns.push(`<button type="button" class="btn-fit-mini" data-idx="${idx}" data-fit="${k}">${k}合わせ</button>`);
+              }
+            }
+          });
+
           if (mat.flags && mat.flags.includes("is_filler")) {
             fitBtns.push(`<button type="button" class="btn-fit-mini" data-idx="${idx}" data-fit="FILLER">100%残余充填</button>`);
           }
@@ -420,20 +474,20 @@
               <td>
                 <strong>${mat.name}</strong>
                 <div style="font-size:0.74rem;color:var(--text-muted);">
-                  保証: N ${mat.N}% / P ${mat.P}% / K ${mat.K}%${mat.Mg ? ` / Mg ${mat.Mg}%` : ""}
+                  含有: ${matSpecs.length > 0 ? matSpecs.join(" / ") : "不活性フィラー (0%)"}
                 </div>
               </td>
               <td>
                 <div class="ratio-input-wrap">
-                  <input type="number" class="ratio-num-input" data-idx="${idx}" value="${round2(r)}" min="0" max="150" step="0.5" />
+                  <input type="number" class="ratio-num-input" data-idx="${idx}" value="${round2(r)}" min="0" max="150" step="0.2" />
                   <span>%</span>
                 </div>
               </td>
               <td><strong>${kgPerTon}</strong> kg</td>
               <td>${kgPerBag} kg</td>
               <td>
-                <span style="font-family:monospace;font-size:0.82rem;">
-                  N:<b>${supN}</b> / P:<b>${supP}</b> / K:<b>${supK}</b>${supMg ? ` / Mg:<b>${supMg}</b>` : ""}
+                <span style="font-family:monospace;font-size:0.81rem;">
+                  ${suppliedParts.length > 0 ? suppliedParts.join(" / ") : "-"}
                 </span>
               </td>
               <td><div class="fit-mini-btns">${fitBtns.join("")}</div></td>
@@ -451,7 +505,7 @@
       activeRatio: 0,
       N: 0, AN: 0, UN: 0, NN: 0, ON: 0,
       P: 0, WP: 0, CP: 0,
-      K: 0, Mg: 0, Ca: 0, Si: 0, Mn: 0, B: 0,
+      K: 0, Mg: 0, Ca: 0, Si: 0, S: 0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
       costPerTon: 0,
       organicWeightRatio: 0,
       hasChlorine: false
@@ -462,13 +516,22 @@
       if (!mat || item.ratio <= 0) return;
       const r = item.ratio;
       totals.ratio += r;
-      if (mat.flags && mat.flags.includes("is_filler") && mat.N === 0 && mat.P === 0 && mat.K === 0) {
+
+      const isPureFiller =
+        mat.flags &&
+        mat.flags.includes("is_filler") &&
+        mat.N === 0 &&
+        mat.P === 0 &&
+        mat.K === 0 &&
+        (!state.enabledExtras.includes("Ca") || (mat.Ca || 0) === 0);
+
+      if (isPureFiller) {
         totals.fillerRatio += r;
       } else {
         totals.activeRatio += r;
       }
 
-      const nVal = (r * mat.N) / 100;
+      const nVal = (r * (mat.N || 0)) / 100;
       const anVal = (r * (mat.AN || 0)) / 100;
       const unVal = (r * (mat.UN || 0)) / 100;
       const nnVal = (r * (mat.NN || 0)) / 100;
@@ -481,15 +544,14 @@
         totals.organicWeightRatio += r;
       }
 
-      totals.P += (r * mat.P) / 100;
+      totals.P += (r * (mat.P || 0)) / 100;
       totals.WP += (r * (mat.WP || 0)) / 100;
       totals.CP += (r * (mat.CP || mat.P || 0)) / 100;
-      totals.K += (r * mat.K) / 100;
-      totals.Mg += (r * mat.Mg) / 100;
-      totals.Ca += (r * (mat.Ca || 0)) / 100;
-      totals.Si += (r * (mat.Si || 0)) / 100;
-      totals.Mn += (r * (mat.Mn || 0)) / 100;
-      totals.B += (r * (mat.B || 0)) / 100;
+
+      ["K", "Mg", "Ca", "Si", "S", "Mn", "B", "Fe", "Zn", "Cu", "Mo"].forEach((k) => {
+        totals[k] += (r * (mat[k] || 0)) / 100;
+      });
+
       totals.costPerTon += (r / 100) * (mat.pricePerTon || 0);
       if (mat.flags && mat.flags.includes("has_chlorine")) {
         totals.hasChlorine = true;
@@ -510,7 +572,6 @@
     if (totals.ratio > 100.05) {
       const overPct = round1(totals.ratio - 100);
       const overKg = Math.round((totals.ratio - 100) * 10);
-      // 現在の原料比率のまま100%に圧縮した場合の到達上限成分
       const scaleTo100 = 100 / totals.ratio;
       const maxN = (totals.N * scaleTo100).toFixed(1);
       const maxP = (totals.P * scaleTo100).toFixed(1);
@@ -571,7 +632,7 @@
       .join("");
 
     // 配合禁忌・リスクアラート描画
-    const alerts = evaluateCompatibilityAndRisks(state.recipe, totals);
+    const alerts = evaluateCompatibilityAndRisks(state.recipe);
     const alertsBox = document.getElementById("compatibility-alerts");
     alertsBox.innerHTML = alerts
       .map(
@@ -584,9 +645,10 @@
       )
       .join("");
 
-    // 保証成分 vs 理論成分 比較テーブル
+    // 保証成分 vs 理論成分 比較テーブル（基本4成分 ＋ 選択された追加保証成分）
     const compRows = [
       {
+        key: "N",
         label: "窒素全量 (T-N)",
         guar: state.target.N,
         req: reqTarget.N,
@@ -594,6 +656,7 @@
         detail: `A-N: ${round1(totals.AN)}% / U-N: ${round1(totals.UN)}% / N-N: ${round1(totals.NN)}% / 有機N: ${round1(totals.ON)}%`
       },
       {
+        key: "P",
         label: "リン酸全量 (T-P₂O₅)",
         guar: state.target.P,
         req: reqTarget.P,
@@ -601,6 +664,7 @@
         detail: `水溶性(W-P): ${round1(totals.WP)}% / く溶性(C-P): ${round1(totals.CP)}%`
       },
       {
+        key: "K",
         label: "カリ (K₂O)",
         guar: state.target.K,
         req: reqTarget.K,
@@ -608,6 +672,7 @@
         detail: `水溶性・く溶性カリ計`
       },
       {
+        key: "Mg",
         label: "苦土 (MgO)",
         guar: state.target.Mg,
         req: reqTarget.Mg,
@@ -616,22 +681,40 @@
       }
     ];
 
+    // 追加指定された副成分・微量要素（または処方中に含まれている副成分）を行として追加
+    EXTRA_NUTRIENT_DEFS.forEach((d) => {
+      const isEnabled = state.enabledExtras.includes(d.key);
+      const actualVal = totals[d.key] || 0;
+      if (isEnabled || actualVal > 0.001) {
+        compRows.push({
+          key: d.key,
+          label: `${d.label}${isEnabled ? " [指定]" : " (副成分)"}`,
+          guar: isEnabled ? state.target[d.key] || 0 : 0,
+          req: isEnabled ? reqTarget[d.key] || 0 : 0,
+          actual: actualVal,
+          detail: isEnabled ? "保証対象として指定中" : "原料由来の随伴供給"
+        });
+      }
+    });
+
     document.getElementById("comp-table-body").innerHTML = compRows
       .map((r) => {
+        const isMicro = ["Mn", "B", "Fe", "Zn", "Cu", "Mo"].includes(r.key);
+        const tol = isMicro ? -0.01 : -0.08;
         const diff = round2(r.actual - r.req);
-        const pass = diff >= -0.08;
+        const pass = diff >= tol;
         const badge =
-          r.guar === 0 && r.actual === 0
-            ? `<span style="color:var(--text-muted)">-</span>`
+          r.guar === 0 && r.req === 0
+            ? `<span style="color:var(--text-muted)">随伴含有</span>`
             : pass
-            ? `<span class="diff-badge pass">合格 (${diff >= 0 ? "+" : ""}${diff.toFixed(1)}%)</span>`
-            : `<span class="diff-badge short">不足 (${diff.toFixed(1)}%)</span>`;
+            ? `<span class="diff-badge pass">合格 (${diff >= 0 ? "+" : ""}${diff.toFixed(2)}%)</span>`
+            : `<span class="diff-badge short">不足 (${diff.toFixed(2)}%)</span>`;
 
         return `
           <tr>
             <td><strong>${r.label}</strong></td>
-            <td>${r.guar.toFixed(1)}%</td>
-            <td>${r.req.toFixed(2)}%</td>
+            <td>${r.guar > 0 ? `${r.guar}%` : "-"}</td>
+            <td>${r.req > 0 ? `${r.req.toFixed(2)}%` : "-"}</td>
             <td><strong style="font-size:0.95rem;">${r.actual.toFixed(2)}%</strong></td>
             <td>${badge}</td>
             <td><small style="color:var(--text-muted)">${r.detail}</small></td>
@@ -649,10 +732,11 @@
     document.getElementById("kpi-organic-n-share").textContent = `全窒素に占める有機態N割合: ${orgNShare}% (${round2(totals.ON)}%)`;
 
     const subs = [];
-    if (totals.Ca > 0.1) subs.push(`CaO: ${round1(totals.Ca)}%`);
-    if (totals.Si > 0.1) subs.push(`SiO₂: ${round1(totals.Si)}%`);
-    if (totals.Mn > 0.01) subs.push(`MnO: ${round2(totals.Mn)}%`);
-    if (totals.B > 0.01) subs.push(`B₂O₃: ${round2(totals.B)}%`);
+    EXTRA_NUTRIENT_DEFS.forEach((d) => {
+      if ((totals[d.key] || 0) > 0.005) {
+        subs.push(`${d.short}: ${round2(totals[d.key])}%`);
+      }
+    });
     document.getElementById("kpi-sub-nutrients").textContent = subs.length > 0 ? subs.join(" / ") : "なし";
     document.getElementById("kpi-chlorine-status").textContent = totals.hasChlorine
       ? "⚠️ 塩素(Cl)含有原料あり（塩加・塩安系）"
@@ -677,7 +761,6 @@
 
     document.getElementById("limit-current-target-label").textContent = `(${state.target.N}-${state.target.P}-${state.target.K})`;
 
-    // 比較する代表的な原料組み合わせパターン
     const combos = [
       {
         title: "① 普通化成・低濃度硫酸系",
@@ -738,7 +821,6 @@
     const tbody = document.getElementById("limit-comparison-tbody");
     tbody.innerHTML = combos
       .map((c, idx) => {
-        // 二分探索で totalRatio == 100.0 および 95.0 となる最大スケール k を求める
         const findMaxMultiplier = (limitPct) => {
           let low = 0, high = 60;
           for (let iter = 0; iter < 28; iter++) {
@@ -759,7 +841,6 @@
         const maxGradeStr = `${(rN * k100).toFixed(1)} - ${(rP * k100).toFixed(1)} - ${(rK * k100).toFixed(1)}`;
         const safeGradeStr = `${(rN * k95).toFixed(1)} - ${(rP * k95).toFixed(1)} - ${(rK * k95).toFixed(1)}`;
 
-        // 現在のSTEP1目標に対する判定
         const curRes = solveFormulation(getRequiredDesignTarget(), c.config);
         let curJudgeHtml = "";
         if (curRes.feasible) {
@@ -788,10 +869,7 @@
       })
       .join("");
 
-    // コンボ適用ボタン用のキャッシュ
     window._cachedBoundaryCombos = combos;
-
-    // 機能B: 2次元境界マトリクスの描画
     render2DFeasibilityMatrix();
   }
 
@@ -942,6 +1020,11 @@
           })
           .join(", ");
 
+        const subList = [];
+        ["Ca", "Si", "S", "Mn", "B", "Fe", "Zn", "Cu", "Mo"].forEach((k) => {
+          if ((m[k] || 0) > 0) subList.push(`${k}:${m[k]}%`);
+        });
+
         const adminBtns = state.isAdmin
           ? `
             <button type="button" class="btn-outline btn-sm" data-edit-mat="${m.id}">編集</button>
@@ -957,11 +1040,11 @@
               ${m.isTempSession ? '<span class="flag-chip warn">一時試算用</span>' : ""}
               <div style="font-size:0.74rem;color:var(--text-muted);max-width:260px">${m.note || ""}</div>
             </td>
-            <td><strong>${m.N}%</strong><br/><small>${m.AN || 0} / ${m.UN || 0}</small></td>
-            <td><strong>${m.P}%</strong><br/><small>${m.WP || 0} / ${m.CP || 0}</small></td>
-            <td><strong>${m.K}%</strong></td>
-            <td>${m.Mg}%</td>
-            <td><small>Ca:${m.Ca || 0}% / Si:${m.Si || 0}%</small></td>
+            <td><strong>${m.N || 0}%</strong><br/><small>${m.AN || 0} / ${m.UN || 0}</small></td>
+            <td><strong>${m.P || 0}%</strong><br/><small>${m.WP || 0} / ${m.CP || 0}</small></td>
+            <td><strong>${m.K || 0}%</strong></td>
+            <td>${m.Mg || 0}%</td>
+            <td><small>${subList.length > 0 ? subList.join(", ") : "-"}</small></td>
             <td>
               ${flagsHtml || "-"}
               ${directForbidNames ? `<div style="font-size:0.72rem;color:var(--danger);margin-top:2px;">❌ 直接禁忌: ${directForbidNames}</div>` : ""}
@@ -981,6 +1064,7 @@
 
   function renderAll() {
     renderAuthHeader();
+    renderExtraNutrientSelector();
     updateRecipeMaterialSelect();
     renderFormulatorTab();
     renderBoundaryTab();
@@ -1008,8 +1092,6 @@
     const reqTarget = getRequiredDesignTarget();
     const res = solveFormulation(reqTarget, config);
     state.recipe = res.items;
-
-    // もし100%未満なら残余をクレー増量材で自動充填するか、空き枠として見せる
     renderAll();
   }
 
@@ -1049,43 +1131,58 @@
       return m ? s + (it.ratio * (m[key] || 0)) / 100 : s;
     }, 0);
 
-    const needed = Math.max(0, (reqTarget[key] || 0) - otherSupplied);
+    const needed = Math.max(0, (reqTarget[key] || state.target[key] || 0) - otherSupplied);
     if ((mat[key] || 0) > 0) {
       item.ratio = round2((needed / mat[key]) * 100);
       renderAll();
     }
   }
 
-  // CSV出力
   function exportFormulationCsv() {
+    const activeExtraKeys = EXTRA_NUTRIENT_DEFS.filter((d) => state.enabledExtras.includes(d.key)).map((d) => d.key);
+    const headerNutrients = ["N", "P", "K", "Mg", ...activeExtraKeys];
+
     const rows = [
       ["化成肥料・BB肥料 処方設計書 (1,000kg / 100%基準)"],
-      ["目標銘柄", `N:${state.target.N}% - P2O5:${state.target.P}% - K2O:${state.target.K}% - MgO:${state.target.Mg}%`],
+      [
+        "目標銘柄",
+        headerNutrients.map((k) => `${k}:${state.target[k] || 0}%`).join(" - ")
+      ],
       [],
-      ["原料名", "配合率(%)", "1トンあたり重量(kg)", "20kg袋あたり重量(kg)", "N供給(%)", "P2O5供給(%)", "K2O供給(%)", "MgO供給(%)", "原料費(円/t)"]
+      [
+        "原料名",
+        "配合率(%)",
+        "1トンあたり重量(kg)",
+        "20kg袋あたり重量(kg)",
+        ...headerNutrients.map((k) => `${k}供給(%)`),
+        "原料費(円/t)"
+      ]
     ];
 
-    let sumRatio = 0, sumN = 0, sumP = 0, sumK = 0, sumMg = 0, sumCost = 0;
+    let sumRatio = 0, sumCost = 0;
+    const sumNut = {};
+    headerNutrients.forEach((k) => (sumNut[k] = 0));
+
     state.recipe.forEach((it) => {
       const mat = getMaterial(it.id);
       if (!mat || it.ratio <= 0) return;
       const r = it.ratio;
-      const n = (r * mat.N) / 100;
-      const p = (r * mat.P) / 100;
-      const k = (r * mat.K) / 100;
-      const mg = (r * mat.Mg) / 100;
       const cost = (r / 100) * (mat.pricePerTon || 0);
-      sumRatio += r; sumN += n; sumP += p; sumK += k; sumMg += mg; sumCost += cost;
+      sumRatio += r;
+      sumCost += cost;
+
+      const nutCells = headerNutrients.map((k) => {
+        const val = (r * (mat[k] || 0)) / 100;
+        sumNut[k] += val;
+        return val.toFixed(2);
+      });
 
       rows.push([
         mat.name,
         r.toFixed(2),
         (r * 10).toFixed(1),
         ((r * 20) / 100).toFixed(2),
-        n.toFixed(2),
-        p.toFixed(2),
-        k.toFixed(2),
-        mg.toFixed(2),
+        ...nutCells,
         Math.round(cost)
       ]);
     });
@@ -1095,10 +1192,7 @@
       sumRatio.toFixed(2),
       (sumRatio * 10).toFixed(1),
       ((sumRatio * 20) / 100).toFixed(2),
-      sumN.toFixed(2),
-      sumP.toFixed(2),
-      sumK.toFixed(2),
-      sumMg.toFixed(2),
+      ...headerNutrients.map((k) => sumNut[k].toFixed(2)),
       Math.round(sumCost)
     ]);
 
@@ -1112,7 +1206,6 @@
     URL.revokeObjectURL(url);
   }
 
-  // 管理者用：更新されたマスターデータを materials.js として書き出し
   function exportMasterJsFile() {
     if (!state.isAdmin) {
       alert("マスターデータの書き出しには管理者ログインが必要です。");
@@ -1206,21 +1299,47 @@
     document.getElementById("preset-grade-select").addEventListener("change", (e) => {
       const p = window.MASTER_FERTILIZER_DB.gradePresets.find((x) => x.id === e.target.value);
       if (!p) return;
-      state.target = { ...p.target };
-      document.getElementById("target-N").value = p.target.N;
-      document.getElementById("target-P").value = p.target.P;
-      document.getElementById("target-K").value = p.target.K;
-      document.getElementById("target-Mg").value = p.target.Mg;
+      state.target = { ...state.target, ...p.target };
+      state.enabledExtras = Array.isArray(p.enabledExtras) ? [...p.enabledExtras] : [];
+      document.getElementById("target-N").value = state.target.N;
+      document.getElementById("target-P").value = state.target.P;
+      document.getElementById("target-K").value = state.target.K;
+      document.getElementById("target-Mg").value = state.target.Mg;
       state.recipe = p.recipe.map((r) => ({ ...r }));
       renderAll();
     });
 
-    // 目標成分入力
+    // 基本4目標成分入力
     ["N", "P", "K", "Mg"].forEach((k) => {
       document.getElementById(`target-${k}`).addEventListener("input", (e) => {
         state.target[k] = Math.max(0, parseFloat(e.target.value) || 0);
-        renderAll();
+        renderFormulatorTab();
+        renderBoundaryTab();
       });
+    });
+
+    // 追加保証成分（Ca, Si, S, Mn, B, Fe, Zn, Cu, Mo）のトグルと数値入力
+    document.getElementById("extra-nutrient-toggles").addEventListener("change", (e) => {
+      const key = e.target.dataset.extraToggle;
+      if (!key) return;
+      if (e.target.checked) {
+        if (!state.enabledExtras.includes(key)) state.enabledExtras.push(key);
+        const def = EXTRA_NUTRIENT_DEFS.find((d) => d.key === key);
+        if (!state.target[key] || state.target[key] <= 0) {
+          state.target[key] = def ? def.defaultTarget : 0.5;
+        }
+      } else {
+        state.enabledExtras = state.enabledExtras.filter((k) => k !== key);
+        state.target[key] = 0;
+      }
+      renderAll();
+    });
+
+    document.getElementById("extra-targets-grid").addEventListener("input", (e) => {
+      const key = e.target.dataset.extraInput;
+      if (!key) return;
+      state.target[key] = Math.max(0, parseFloat(e.target.value) || 0);
+      renderFormulatorTab();
     });
 
     document.getElementById("overage-select").addEventListener("change", (e) => {
@@ -1233,17 +1352,13 @@
       renderAll();
     });
 
-    // 逆算ソルバー実行
     document.getElementById("btn-run-solver").addEventListener("click", runSolverFromUI);
-
-    // 残余枠フィラー充填・クリア
     document.getElementById("btn-fill-filler").addEventListener("click", fillRemainingWithFiller);
     document.getElementById("btn-clear-recipe").addEventListener("click", () => {
       state.recipe = [];
       renderAll();
     });
 
-    // 処方表への原料追加
     document.getElementById("recipe-category-filter").addEventListener("change", (e) => {
       state.recipeCategoryFilter = e.target.value;
       updateRecipeMaterialSelect();
@@ -1254,14 +1369,15 @@
       if (!id) return;
       const existing = state.recipe.find((it) => it.id === id);
       if (existing) {
-        existing.ratio = round2(existing.ratio + 5);
+        existing.ratio = round2(existing.ratio + 2);
       } else {
-        state.recipe.push({ id, ratio: 10.0 });
+        const mat = getMaterial(id);
+        const defaultRatio = mat && mat.category === "micronutrient" ? 1.5 : 10.0;
+        state.recipe.push({ id, ratio: defaultRatio });
       }
       renderAll();
     });
 
-    // 処方表内の入力・ボタン
     const recipeTbody = document.getElementById("recipe-table-body");
     recipeTbody.addEventListener("input", (e) => {
       if (e.target.classList.contains("ratio-num-input")) {
@@ -1312,7 +1428,10 @@
       const mg = parseFloat(document.getElementById("mat-fixed-mg").value) || 0;
       const org = parseFloat(document.getElementById("mat-fixed-org").value) || 0;
 
-      state.target = { N: n, P: p, K: k, Mg: mg };
+      state.target.N = n;
+      state.target.P = p;
+      state.target.K = k;
+      state.target.Mg = mg;
       document.getElementById("target-N").value = n;
       document.getElementById("target-P").value = p;
       document.getElementById("target-K").value = k;
@@ -1333,7 +1452,6 @@
     });
 
     // TAB 3: 新規原料追加・編集フォーム（チェックボックス連動）
-    // 成分値を入れたら対応するチェックボックスも自動補助ONにする親切設計
     document.getElementById("mat-AN").addEventListener("input", (e) => {
       if (parseFloat(e.target.value) > 0) {
         const cb = document.querySelector('input[name="mat-flag"][value="has_an"]');
@@ -1382,8 +1500,13 @@
         Mg: parseFloat(document.getElementById("mat-Mg").value) || 0,
         Ca: parseFloat(document.getElementById("mat-Ca").value) || 0,
         Si: parseFloat(document.getElementById("mat-Si").value) || 0,
+        S: parseFloat(document.getElementById("mat-S").value) || 0,
         Mn: parseFloat(document.getElementById("mat-Mn").value) || 0,
         B: parseFloat(document.getElementById("mat-B").value) || 0,
+        Fe: parseFloat(document.getElementById("mat-Fe").value) || 0,
+        Zn: parseFloat(document.getElementById("mat-Zn").value) || 0,
+        Cu: parseFloat(document.getElementById("mat-Cu").value) || 0,
+        Mo: parseFloat(document.getElementById("mat-Mo").value) || 0,
         flags: checkedFlags,
         forbiddenWith: checkedForbids,
         cautionWith: [],
@@ -1427,7 +1550,10 @@
       if (useBtn) {
         const id = useBtn.dataset.useMat;
         const existing = state.recipe.find((it) => it.id === id);
-        if (!existing) state.recipe.push({ id, ratio: 10.0 });
+        if (!existing) {
+          const mat = getMaterial(id);
+          state.recipe.push({ id, ratio: mat && mat.category === "micronutrient" ? 1.5 : 10.0 });
+        }
         document.querySelector('.nav-tab[data-tab="formulator"]').click();
         renderAll();
         return;
@@ -1443,18 +1569,10 @@
         document.getElementById("mat-name").value = m.name;
         document.getElementById("mat-category").value = m.category;
         document.getElementById("mat-price").value = m.pricePerTon || 0;
-        document.getElementById("mat-N").value = m.N || 0;
-        document.getElementById("mat-AN").value = m.AN || 0;
-        document.getElementById("mat-UN").value = m.UN || 0;
-        document.getElementById("mat-P").value = m.P || 0;
-        document.getElementById("mat-WP").value = m.WP || 0;
-        document.getElementById("mat-CP").value = m.CP || 0;
-        document.getElementById("mat-K").value = m.K || 0;
-        document.getElementById("mat-Mg").value = m.Mg || 0;
-        document.getElementById("mat-Ca").value = m.Ca || 0;
-        document.getElementById("mat-Si").value = m.Si || 0;
-        document.getElementById("mat-Mn").value = m.Mn || 0;
-        document.getElementById("mat-B").value = m.B || 0;
+        ["N", "AN", "UN", "P", "WP", "CP", "K", "Mg", "Ca", "Si", "S", "Mn", "B", "Fe", "Zn", "Cu", "Mo"].forEach((k) => {
+          const el = document.getElementById(`mat-${k}`);
+          if (el) el.value = m[k] || 0;
+        });
         document.getElementById("mat-note").value = m.note || "";
 
         document.querySelectorAll('input[name="mat-flag"]').forEach((cb) => {
@@ -1487,9 +1605,9 @@
   initDropdowns();
   bindEvents();
 
-  // 初期表示として「高度化成・BB 15-15-15」をロード
   const initialPreset = window.MASTER_FERTILIZER_DB.gradePresets[1];
-  state.target = { ...initialPreset.target };
+  state.target = { ...state.target, ...initialPreset.target };
+  state.enabledExtras = [...(initialPreset.enabledExtras || [])];
   state.recipe = initialPreset.recipe.map((r) => ({ ...r }));
   renderAll();
 })();

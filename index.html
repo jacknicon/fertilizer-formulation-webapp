@@ -117,6 +117,15 @@
             </div>
           </div>
 
+          <!-- 場合に応じて追加できる副成分・微量要素の保証指定パネル -->
+          <div class="extra-nutrients-selector-box">
+            <div class="extra-selector-header">
+              <span><strong>➕ 追加で保証・指定する副成分・微量要素を選択：</strong><small>（チェックすると目標%入力欄と逆算・判定が追加されます）</small></span>
+            </div>
+            <div id="extra-nutrient-toggles" class="extra-toggles-row"></div>
+            <div id="extra-targets-grid" class="extra-targets-grid"></div>
+          </div>
+
           <div class="design-options-row">
             <div class="option-item">
               <label for="overage-select" title="分析割れを防ぐため、目標保証成分に対してどれだけ多めに設計するか">
@@ -516,12 +525,32 @@
                 <input type="number" id="mat-Si" class="num-input" value="0" min="0" max="100" step="0.1" />
               </div>
               <div class="form-group">
+                <label>硫黄 S (%)</label>
+                <input type="number" id="mat-S" class="num-input" value="0" min="0" max="100" step="0.1" />
+              </div>
+              <div class="form-group">
                 <label>マンガン MnO (%)</label>
-                <input type="number" id="mat-Mn" class="num-input" value="0" min="0" max="100" step="0.1" />
+                <input type="number" id="mat-Mn" class="num-input" value="0" min="0" max="100" step="0.05" />
               </div>
               <div class="form-group">
                 <label>ホウ素 B₂O₃ (%)</label>
-                <input type="number" id="mat-B" class="num-input" value="0" min="0" max="100" step="0.1" />
+                <input type="number" id="mat-B" class="num-input" value="0" min="0" max="100" step="0.05" />
+              </div>
+              <div class="form-group">
+                <label>鉄 Fe (%)</label>
+                <input type="number" id="mat-Fe" class="num-input" value="0" min="0" max="100" step="0.05" />
+              </div>
+              <div class="form-group">
+                <label>亜鉛 Zn (%)</label>
+                <input type="number" id="mat-Zn" class="num-input" value="0" min="0" max="100" step="0.05" />
+              </div>
+              <div class="form-group">
+                <label>銅 Cu (%)</label>
+                <input type="number" id="mat-Cu" class="num-input" value="0" min="0" max="100" step="0.05" />
+              </div>
+              <div class="form-group">
+                <label>モリブデン Mo (%)</label>
+                <input type="number" id="mat-Mo" class="num-input" value="0" min="0" max="100" step="0.01" />
               </div>
             </div>
 
