@@ -564,7 +564,7 @@ window.MASTER_FERTILIZER_DB = {
     // ================= 6. 有機質原料 =================
     {
       id: "rapeseed_meal",
-      name: "菜種油かす（粉末/ペレット）",
+      name: "菜種油かす（粉末/ペレット N:5.3%）",
       category: "organic",
       N: 5.3, AN: 0, UN: 0, NN: 0,
       P: 2.0, WP: 0, CP: 0,
@@ -576,8 +576,47 @@ window.MASTER_FERTILIZER_DB = {
       note: "代表的な植物性有機原料。Nが5.3%と低いため、「有機態窒素率50%以上」かつ「高N（例：12%以上）」を同時に満たそうとすると100%枠を超えて製造不能になりやすい。"
     },
     {
+      id: "soybean_meal",
+      name: "大豆油かす（N:7.0%）",
+      category: "organic",
+      N: 7.0, AN: 0, UN: 0, NN: 0,
+      P: 1.5, WP: 0, CP: 0,
+      K: 2.0, Mg: 0.4, Ca: 0.4, Si: 0, S: 0.4, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
+      pricePerTon: 98000,
+      flags: ["is_organic"],
+      forbiddenWith: [],
+      cautionWith: [],
+      note: "菜種油かすより窒素含有率が高い（7.0%）植物性有機原料。少ない配合率で有機態窒素を稼ぎたい場合に有利。"
+    },
+    {
+      id: "cottonseed_meal",
+      name: "綿実油かす（N:5.5%）",
+      category: "organic",
+      N: 5.5, AN: 0, UN: 0, NN: 0,
+      P: 2.5, WP: 0, CP: 0,
+      K: 1.5, Mg: 0.6, Ca: 0.3, Si: 0, S: 0.4, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
+      pricePerTon: 86000,
+      flags: ["is_organic"],
+      forbiddenWith: [],
+      cautionWith: [],
+      note: "果樹・果菜用有機配合で人気の植物性有機原料（N 5.5%, P 2.5%, K 1.5%）。"
+    },
+    {
+      id: "castor_meal",
+      name: "ひまし油かす（キャスターミール N:5.2%）",
+      category: "organic",
+      N: 5.2, AN: 0, UN: 0, NN: 0,
+      P: 2.0, WP: 0, CP: 0,
+      K: 1.0, Mg: 0.5, Ca: 0.8, Si: 0, S: 0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
+      pricePerTon: 74000,
+      flags: ["is_organic"],
+      forbiddenWith: [],
+      cautionWith: [],
+      note: "有機化成・有機配合の植物性ベース原料として広く使われる油かす（N 5.2%）。"
+    },
+    {
       id: "fish_meal",
-      name: "魚かす（魚粉ペレット）",
+      name: "魚かす（魚粉ペレット N:8.0%-P:6.0%）",
       category: "organic",
       N: 8.0, AN: 0, UN: 0, NN: 0,
       P: 6.0, WP: 0, CP: 0,
@@ -586,11 +625,11 @@ window.MASTER_FERTILIZER_DB = {
       flags: ["is_organic"],
       forbiddenWith: [],
       cautionWith: [],
-      note: "動物性有機原料。菜種油かすよりN(8%)・P(6%)・Ca(6%)が高いため、有機入り化成で有機比率を高める際に有利。"
+      note: "動物性有機原料の代表。菜種油かすよりN(8%)・P(6%)・Ca(6%)が高いため、有機入り化成で有機比率を高める際に有利。"
     },
     {
       id: "steamed_bone_meal",
-      name: "蒸製骨粉",
+      name: "蒸製骨粉（N:4.0%-P:20.0%）",
       category: "organic",
       N: 4.0, AN: 0, UN: 0, NN: 0,
       P: 20.0, WP: 0, CP: 18.0,
@@ -599,11 +638,24 @@ window.MASTER_FERTILIZER_DB = {
       flags: ["is_organic"],
       forbiddenWith: [],
       cautionWith: [],
-      note: "有機質リン酸・カルシウム源（P 20%, CaO 26%）。有機100%配合肥料でリン酸を高めたい場合の必須原料。"
+      note: "有機質リン酸・カルシウム源（P 20%, CaO 26%）。有機配合肥料でリン酸を高めたい場合の必須原料。"
+    },
+    {
+      id: "meat_bone_meal",
+      name: "肉骨粉（N:8.0%-P:12.0%）",
+      category: "organic",
+      N: 8.0, AN: 0, UN: 0, NN: 0,
+      P: 12.0, WP: 0, CP: 10.0,
+      K: 0, Mg: 0.3, Ca: 16.0, Si: 0, S: 0.5, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
+      pricePerTon: 105000,
+      flags: ["is_organic"],
+      forbiddenWith: [],
+      cautionWith: [],
+      note: "魚かすと骨粉の中間的な成分バランス（N 8%, P 12%, CaO 16%）を持つ動物質有機原料。"
     },
     {
       id: "feather_meal",
-      name: "フェザーミール（蒸製毛粉）",
+      name: "フェザーミール（蒸製毛粉 N:12.5%）",
       category: "organic",
       N: 12.5, AN: 0, UN: 0, NN: 0,
       P: 0.5, WP: 0, CP: 0,
@@ -614,11 +666,50 @@ window.MASTER_FERTILIZER_DB = {
       cautionWith: [],
       note: "高濃度の有機態窒素源（N 12.5%, S 2.0%）。少ない配合重量で有機態Nを稼げるため、有機入り高成分化成の処方設計で極めて重宝する。"
     },
+    {
+      id: "blood_meal",
+      name: "乾燥血粉（ブラッドミール N:13.0%）",
+      category: "organic",
+      N: 13.0, AN: 0, UN: 0, NN: 0,
+      P: 0.5, WP: 0, CP: 0,
+      K: 0.5, Mg: 0, Ca: 0.3, Si: 0, S: 0.5, Mn: 0, B: 0, Fe: 0.3, Zn: 0, Cu: 0, Mo: 0,
+      pricePerTon: 175000,
+      flags: ["is_organic"],
+      forbiddenWith: [],
+      cautionWith: [],
+      note: "有機質原料の中で最高クラスの窒素濃度（N 13.0%）かつ速効性。高N有機配合の切り札。"
+    },
+    {
+      id: "crab_shell",
+      name: "カニ殻粉末/ペレット（N:4.0%-P:2.5%-Ca:22%）",
+      category: "organic",
+      N: 4.0, AN: 0, UN: 0, NN: 0,
+      P: 2.5, WP: 0, CP: 0,
+      K: 0, Mg: 1.0, Ca: 22.0, Si: 0, S: 0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
+      pricePerTon: 110000,
+      flags: ["is_organic", "is_weak_alkali"],
+      forbiddenWith: [],
+      cautionWith: [],
+      note: "キチン質とカルシウムを含む機能性有機原料。"
+    },
 
     // ================= 7. 増量材・フィラー（1,000kg バランス調整材） =================
     {
+      id: "filler_natural_humus",
+      name: "天然腐植（腐植酸・フミン酸フィラー / 成分0%）",
+      category: "filler",
+      N: 0, AN: 0, UN: 0, NN: 0,
+      P: 0, WP: 0, CP: 0,
+      K: 0, Mg: 0, Ca: 0, Si: 0, S: 0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0,
+      pricePerTon: 35000,
+      flags: ["is_filler"],
+      forbiddenWith: [],
+      cautionWith: [],
+      note: "保証成分を含まない（0%）天然腐植・腐植酸系フィラー（増量材）。他原料の化学反応を邪魔せず1,000kg（100%）の残余重量を調整でき、保肥力(CEC)・根張り促進・黒色着色効果も付与できる。"
+    },
+    {
       id: "filler_clay",
-      name: "クレー・カオリン（不活性増量材）",
+      name: "クレー・カオリン（不活性増量材 / 成分0%）",
       category: "filler",
       N: 0, AN: 0, UN: 0, NN: 0,
       P: 0, WP: 0, CP: 0,
@@ -627,7 +718,7 @@ window.MASTER_FERTILIZER_DB = {
       flags: ["is_filler"],
       forbiddenWith: [],
       cautionWith: [],
-      note: "化学的に完全に不活性な増量材（フィラー）および化成造粒バインダー。どの原料とも反応せず、1,000kg（100%）の残余重量を安全に埋めることができる。"
+      note: "化学的に完全に不活性な鉱物系増量材（フィラー）および化成造粒バインダー。どの原料とも反応せず、1,000kg（100%）の残余重量を安全に埋めることができる。"
     },
     {
       id: "filler_gypsum",
@@ -724,7 +815,7 @@ window.MASTER_FERTILIZER_DB = {
     },
     {
       id: "grade_organic_8_8_8",
-      name: "有機入り化成 8-8-8（有機態N 40%配合・ギリギリ成立例）",
+      name: "有機入り化成 8-8-8（有機態N 40%・天然腐植フィラー配合）",
       target: { N: 8.0, P: 8.0, K: 8.0, Mg: 0, Ca: 0, Si: 0, S: 0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0 },
       enabledExtras: [],
       recipe: [
@@ -733,7 +824,7 @@ window.MASTER_FERTILIZER_DB = {
         { id: "dap", ratio: 13.5 },
         { id: "urea", ratio: 9.2 },
         { id: "potassium_sulfate", ratio: 15.2 },
-        { id: "filler_clay", ratio: 12.1 }
+        { id: "filler_natural_humus", ratio: 12.1 }
       ]
     }
   ]

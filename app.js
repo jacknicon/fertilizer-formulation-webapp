@@ -1,8 +1,8 @@
 /**
- * 化成肥料・BB肥料 処方設計＆成分限界シミュレーター (FertiFormulate Pro v2.2)
+ * 化成肥料・BB肥料 処方設計＆成分限界シミュレーター (FertiFormulate Pro v2.3)
  */
 (function () {
-  const STORAGE_MASTER_KEY = "fertiformulate_master_materials_v22";
+  const STORAGE_MASTER_KEY = "fertiformulate_master_materials_v23";
   const STORAGE_ADMIN_TOKEN = "fertiformulate_admin_unlocked";
   const STORAGE_APP_GATE_KEY = "fertiformulate_app_gate_unlocked_v1";
   const APP_GATE_PASSCODE = "miyazawakenji";
@@ -33,7 +33,14 @@
       N: 15.0, P: 15.0, K: 15.0, Mg: 0.0,
       Ca: 0, Si: 0, S: 0, Mn: 0, B: 0, Fe: 0, Zn: 0, Cu: 0, Mo: 0
     },
-    enabledExtras: [], // 例: ["Mn", "B", "Fe"]
+    enabledExtras: [],
+    // 有機原料・有機態窒素・有機肥料割合の設計条件
+    organicConfig: {
+      materialId: "rapeseed_meal",
+      mode: "none", // 'none' | 'on_share' (対全N%) | 'on_abs' (有機態N絶対%) | 'weight_ratio' (有機肥料重量%)
+      value: 30
+    },
+    selectedFillerId: "filler_natural_humus",
     overageMode: "none", // none | plus_02 | plus_03 | mult_103
     requireChlorineFree: false,
     recipe: [],
@@ -86,6 +93,67 @@
     return Math.round((val + Number.EPSILON) * 100) / 100;
   }
 
+  // 有機原料の有機態窒素含有率 (%) を返す
+  function getMaterialOrganicNRate(mat) {
+    if (!mat) return 0;
+    const isOrg = (mat.flags && mat.flags.includes("is_organic")) || mat.category === "organic";
+    if (!isOrg) return 0;
+    return Math.max(0, (mat.N || 0) - (mat.AN || 0) - (mat.UN || 0) - (mat.NN || 0));
+  }
+
+  // 有機設定 (materialId, mode, value) と目標N (targetN) から必要有機原料配合率(重量%)と目標O-N(%)を計算
+  function computeOrganicRequirement(orgCfg, targetN) {
+    if (!orgCfg || orgCfg.mode === "none" || !orgCfg.value || orgCfg.value <= 0) {
+      return { requiredWeightRatio: 0, targetON: 0, mat: null, error: null };
+    }
+    const mat = getMaterial(orgCfg.materialId);
+    if (!mat) {
+      return { requiredWeightRatio: 0, targetON: 0, mat: null, error: "有機原料が選択されていません" };
+    }
+    const orgNRate = getMaterialOrganicNRate(mat);
+
+    if (orgCfg.mode === "weight_ratio") {
+      const wRatio = orgCfg.value;
+      const suppliedON = (wRatio * orgNRate) / 100;
+      return { requiredWeightRatio: round2(wRatio), targetON: round2(suppliedON), mat, error: null };
+    }
+
+    if (orgCfg.mode === "on_share") {
+      // 全窒素 T-N に占める有機態窒素の割合 (%)
+      const tON = ((targetN || 0) * orgCfg.value) / 100;
+      if (tON <= 0) {
+        return { requiredWeightRatio: 0, targetON: 0, mat, error: null };
+      }
+      if (orgNRate <= 0) {
+        return {
+          requiredWeightRatio: 999,
+          targetON: round2(tON),
+          mat,
+          error: `選択された有機原料（${mat.name}）には有機態窒素が含まれていません`
+        };
+      }
+      const wRatio = (tON / orgNRate) * 100;
+      return { requiredWeightRatio: round2(wRatio), targetON: round2(tON), mat, error: null };
+    }
+
+    if (orgCfg.mode === "on_abs") {
+      // 製品中の有機態窒素の絶対量 (O-N %)
+      const tON = orgCfg.value;
+      if (orgNRate <= 0) {
+        return {
+          requiredWeightRatio: 999,
+          targetON: round2(tON),
+          mat,
+          error: `選択された有機原料（${mat.name}）には有機態窒素が含まれていません`
+        };
+      }
+      const wRatio = (tON / orgNRate) * 100;
+      return { requiredWeightRatio: round2(wRatio), targetON: round2(tON), mat, error: null };
+    }
+
+    return { requiredWeightRatio: 0, targetON: 0, mat: null, error: null };
+  }
+
   // 安全マージン（盛り込み）適用後の必要設計成分値を返す
   function getRequiredDesignTarget(baseTarget) {
     const T = baseTarget || state.target;
@@ -109,7 +177,7 @@
     return out;
   }
 
-  // ==================== 連立逆算ソルバー（指定原料＋追加副成分・微量要素を解く） ====================
+  // ==================== 連立逆算ソルバー（指定原料＋有機条件＋追加副成分・微量要素を解く） ====================
   function solveFormulation(reqTarget, config) {
     const nMat = getMaterial(config.nId);
     const pMat = getMaterial(config.pId);
@@ -138,8 +206,19 @@
       });
     };
 
-    // 1. 固定有機枠がある場合は先に計上
-    if (config.organicId && config.organicRatio > 0) {
+    // 1. 有機条件の解決（organicMode: 'on_share' | 'on_abs' | 'weight_ratio' または旧互換 organicRatio）
+    let orgWarning = null;
+    if (config.organicMode && config.organicMode !== "none" && config.organicValue > 0) {
+      const orgReq = computeOrganicRequirement(
+        { materialId: config.organicId, mode: config.organicMode, value: config.organicValue },
+        reqTarget.N || 0
+      );
+      if (orgReq.error) {
+        orgWarning = orgReq.error;
+      } else if (orgReq.mat && orgReq.requiredWeightRatio > 0) {
+        addItemAmount(orgReq.mat, orgReq.requiredWeightRatio);
+      }
+    } else if (config.organicId && config.organicRatio > 0) {
       const orgMat = getMaterial(config.organicId);
       if (orgMat) {
         addItemAmount(orgMat, config.organicRatio);
@@ -164,10 +243,10 @@
       addItemAmount(pMat, (remP / pMat.P) * 100);
     }
 
-    // 随伴N超過チェック
-    let overNWarning = null;
-    if (supplied.N > (reqTarget.N || 0) + 0.35) {
-      overNWarning = `リン酸源（${pMat.name}等）に付随する窒素だけで N ${round1(supplied.N)}% となり、目標N (${reqTarget.N}%) を超過します（MAPや重過石への変更を推奨）。`;
+    // 随伴N超過チェック（有機原料＋DAP等の合計Nが目標Nを超えてしまった場合）
+    let overNWarning = orgWarning;
+    if (!overNWarning && supplied.N > (reqTarget.N || 0) + 0.35) {
+      overNWarning = `有機原料およびリン酸源（${pMat.name}等）に付随する窒素だけで N ${round1(supplied.N)}% となり、目標N (${reqTarget.N}%) を超過します（リン酸源をMAPや重過石へ変更するか有機割合を調整してください）。`;
     }
 
     // 4. 窒素源 (N) の必要量を算出
@@ -185,8 +264,7 @@
       addItemAmount(mgMat, (remMg / mgMat.Mg) * 100);
     }
 
-    // 6. 追加指定された副成分・微量要素 (Si, Ca, Mn, B, Fe, Zn, Cu, Mo, S) の自動補填
-    // Si(ケイカル等)はCaやFe/Mnも含むため、Si → Mn/B/Fe/Zn/Cu/Mo → Ca → S の順で補填する
+    // 6. 追加指定された副成分・微量要素 (Si, Mn, B, Fe, Zn, Cu, Mo, Ca, S) の自動補填
     const extraOrder = ["Si", "Mn", "B", "Fe", "Zn", "Cu", "Mo", "Ca", "S"];
     extraOrder.forEach((key) => {
       const targetVal = reqTarget[key] || 0;
@@ -281,7 +359,7 @@
         alerts.push({
           level: "warning",
           title: `⚠️ 塩基性資材の配合率注意（計 ${round1(weakAlkaliSum)}%）`,
-          detail: `アンモニア態Nや水溶性Pを含む原料に対し、塩基性の「${weakAlkaliMats.map((m) => m.name).join("・")}」が ${round1(weakAlkaliSum)}% 配合されています。長期保管時のアンモニア臭発生や水溶性リン酸の退行を防ぐため、中性増量材（クレー・石膏・ゼオライト）や硫酸マグネシウムへの置換も検討してください。`
+          detail: `アンモニア態Nや水溶性Pを含む原料に対し、塩基性の「${weakAlkaliMats.map((m) => m.name).join("・")}」が ${round1(weakAlkaliSum)}% 配合されています。長期保管時のアンモニア臭発生や水溶性リン酸の退行を防ぐため、中性増量材（天然腐植・クレー・石膏・ゼオライト）や硫酸マグネシウムへの置換も検討してください。`
         });
       }
     }
@@ -385,6 +463,122 @@
       .join("");
   }
 
+  // 有機原料ドロップダウンとフィラードロップダウンの動的更新
+  function updateOrganicAndFillerDropdowns() {
+    const orgMaterials = window.MASTER_FERTILIZER_DB.materials.filter(
+      (m) => (m.flags && m.flags.includes("is_organic")) || m.category === "organic"
+    );
+
+    const orgOptionsHtml = orgMaterials
+      .map((m) => `<option value="${m.id}">${m.name} (N:${m.N}% / P:${m.P}% / K:${m.K}%)</option>`)
+      .join("");
+
+    const solverOrgSel = document.getElementById("solver-organic-material");
+    if (solverOrgSel) {
+      const prev = solverOrgSel.value || state.organicConfig.materialId;
+      solverOrgSel.innerHTML = orgOptionsHtml;
+      if (orgMaterials.some((m) => m.id === prev)) {
+        solverOrgSel.value = prev;
+        state.organicConfig.materialId = prev;
+      }
+    }
+
+    const matOrgSel = document.getElementById("mat-org-src");
+    if (matOrgSel) {
+      const prevMat = matOrgSel.value || "rapeseed_meal";
+      matOrgSel.innerHTML = orgOptionsHtml;
+      if (orgMaterials.some((m) => m.id === prevMat)) {
+        matOrgSel.value = prevMat;
+      }
+    }
+
+    // 増量材（フィラー）プルダウン更新
+    const fillerMaterials = window.MASTER_FERTILIZER_DB.materials.filter(
+      (m) => (m.flags && m.flags.includes("is_filler")) || m.category === "filler"
+    );
+    const fillerSel = document.getElementById("filler-type-select");
+    if (fillerSel && fillerMaterials.length > 0) {
+      const prevFiller = fillerSel.value || state.selectedFillerId;
+      fillerSel.innerHTML = fillerMaterials
+        .map((m) => {
+          const isZero = m.N === 0 && m.P === 0 && m.K === 0 && (m.Ca || 0) === 0;
+          return `<option value="${m.id}">増量材: ${m.name}${isZero ? "" : ` (Ca:${m.Ca || 0}%)`}</option>`;
+        })
+        .join("");
+      if (fillerMaterials.some((m) => m.id === prevFiller)) {
+        fillerSel.value = prevFiller;
+        state.selectedFillerId = prevFiller;
+      }
+    }
+  }
+
+  // 有機設定パネルのラベル・プレビュー表示更新
+  function renderOrganicConfigPreview() {
+    const modeSel = document.getElementById("solver-organic-mode");
+    const valInput = document.getElementById("solver-organic-value");
+    const valLabel = document.getElementById("solver-organic-val-label");
+    const previewBox = document.getElementById("solver-organic-preview");
+    if (!modeSel || !valInput || !previewBox) return;
+
+    const mode = state.organicConfig.mode;
+    modeSel.value = mode;
+
+    if (mode === "none") {
+      valInput.disabled = true;
+      valLabel.textContent = "指定値 (%)";
+      previewBox.innerHTML = "有機原料なし（無機原料ベースで逆算します）";
+      return;
+    }
+
+    valInput.disabled = false;
+    if (mode === "on_share") {
+      valLabel.textContent = "有機態N割合 (対全N %)";
+      valInput.step = "5";
+      valInput.max = "100";
+    } else if (mode === "on_abs") {
+      valLabel.textContent = "有機態N絶対量 (O-N %)";
+      valInput.step = "0.2";
+      valInput.max = "15";
+    } else if (mode === "weight_ratio") {
+      valLabel.textContent = "有機肥料の配合率 (重量%)";
+      valInput.step = "5";
+      valInput.max = "100";
+    }
+    valInput.value = state.organicConfig.value;
+
+    const reqTarget = getRequiredDesignTarget();
+    const orgReq = computeOrganicRequirement(state.organicConfig, reqTarget.N || state.target.N);
+
+    if (orgReq.error) {
+      previewBox.innerHTML = `<span style="color:var(--danger);font-weight:700;">⚠️ ${orgReq.error}</span>`;
+      return;
+    }
+
+    if (!orgReq.mat || orgReq.requiredWeightRatio <= 0) {
+      previewBox.innerHTML = "指定値が 0% のため有機原料は配合されません。";
+      return;
+    }
+
+    const wRatio = orgReq.requiredWeightRatio;
+    const kgPerTon = Math.round(wRatio * 10);
+    const supP = round2((wRatio * (orgReq.mat.P || 0)) / 100);
+    const supK = round2((wRatio * (orgReq.mat.K || 0)) / 100);
+    const totalN = reqTarget.N || state.target.N || 0;
+    const onSharePct = totalN > 0 ? round1((orgReq.targetON / totalN) * 100) : 0;
+
+    const overWarn =
+      wRatio > 100
+        ? ` <strong style="color:var(--danger);">（※有機原料だけで100%枠を超過しています！より高Nな魚かす・フェザーミール・血粉等に変えるか割合を下げてください）</strong>`
+        : wRatio > 65
+        ? ` <strong style="color:var(--warning);">（※重量枠の ${wRatio}% を有機が占めるため、残りの無機原料枠は ${round1(100 - wRatio)}% です）</strong>`
+        : "";
+
+    previewBox.innerHTML = `
+      💡 <strong>試算プレビュー：</strong>「${orgReq.mat.name}」を <strong>${wRatio}% (${kgPerTon} kg/t)</strong> 配合します
+      （供給 有機態N: <strong>${orgReq.targetON}%</strong> [全Nの ${onSharePct}%] ／ 随伴P: ${supP}% ／ 随伴K: ${supK}%）${overWarn}
+    `;
+  }
+
   function initDropdowns() {
     const presetSel = document.getElementById("preset-grade-select");
     presetSel.innerHTML =
@@ -405,6 +599,7 @@
       .map((c) => `<option value="${c.id}">${c.name}</option>`)
       .join("");
 
+    updateOrganicAndFillerDropdowns();
     updateRecipeMaterialSelect();
     renderFlagCheckboxesForm();
   }
@@ -420,7 +615,7 @@
         ALL_NUTRIENT_KEYS.forEach((k) => {
           if ((m[k] || 0) > 0) spec.push(`${k}:${m[k]}%`);
         });
-        if (spec.length === 0) spec.push("増量材/0%");
+        if (spec.length === 0) spec.push("成分0%フィラー");
         return `<option value="${m.id}">${m.name} [${spec.join(" / ")}]</option>`;
       })
       .join("");
@@ -447,7 +642,6 @@
           const kgPerTon = round1(r * 10);
           const kgPerBag = round2((r * 20) / 100);
 
-          // 原料が含有している成分一覧と供給量ラベル
           const matSpecs = [];
           const suppliedParts = [];
           const fitBtns = [];
@@ -458,12 +652,18 @@
               matSpecs.push(`${k} ${contentPct}%`);
               const supVal = round2((r * contentPct) / 100);
               suppliedParts.push(`${k}:<b>${supVal}</b>`);
-              // 基本4成分、または現在有効化されている追加成分の「〇〇合わせ」ボタンを表示
               if (["N", "P", "K", "Mg"].includes(k) || state.enabledExtras.includes(k)) {
                 fitBtns.push(`<button type="button" class="btn-fit-mini" data-idx="${idx}" data-fit="${k}">${k}合わせ</button>`);
               }
             }
           });
+
+          const isOrg = (mat.flags && mat.flags.includes("is_organic")) || mat.category === "organic";
+          if (isOrg && state.organicConfig.mode !== "none" && state.organicConfig.value > 0) {
+            fitBtns.push(
+              `<button type="button" class="btn-fit-mini" data-idx="${idx}" data-fit="ORGANIC_TARGET" title="設定した有機条件（有機態N割合または有機重量%）にこの有機原料を合わせます">有機条件合わせ</button>`
+            );
+          }
 
           if (mat.flags && mat.flags.includes("is_filler")) {
             fitBtns.push(`<button type="button" class="btn-fit-mini" data-idx="${idx}" data-fit="FILLER">100%残余充填</button>`);
@@ -474,7 +674,7 @@
               <td>
                 <strong>${mat.name}</strong>
                 <div style="font-size:0.74rem;color:var(--text-muted);">
-                  含有: ${matSpecs.length > 0 ? matSpecs.join(" / ") : "不活性フィラー (0%)"}
+                  含有: ${matSpecs.length > 0 ? matSpecs.join(" / ") : "成分0%フィラー（増量材）"}
                 </div>
               </td>
               <td>
@@ -487,7 +687,7 @@
               <td>${kgPerBag} kg</td>
               <td>
                 <span style="font-family:monospace;font-size:0.81rem;">
-                  ${suppliedParts.length > 0 ? suppliedParts.join(" / ") : "-"}
+                  ${suppliedParts.length > 0 ? suppliedParts.join(" / ") : "0% (重量調整)"}
                 </span>
               </td>
               <td><div class="fit-mini-btns">${fitBtns.join("")}</div></td>
@@ -539,7 +739,7 @@
       totals.AN += anVal;
       totals.UN += unVal;
       totals.NN += nnVal;
-      if (mat.flags && mat.flags.includes("is_organic")) {
+      if ((mat.flags && mat.flags.includes("is_organic")) || mat.category === "organic") {
         totals.ON += Math.max(0, nVal - anVal - unVal - nnVal);
         totals.organicWeightRatio += r;
       }
@@ -582,7 +782,7 @@
         <h3>🔴 製造不可（重量合計が 100% を超過しています：計 ${totals.ratio.toFixed(1)}%）</h3>
         <p>
           目標成分を満たすために必要な原料重量が <strong>1,000kg に対して +${overKg}kg (+${overPct}%) オーバー</strong>しており、物理的に1袋(100%)に収まりません。<br/>
-          💡 <strong>この原料構成での製造可能上限は「N ${maxN} - P ${maxP} - K ${maxK}」まで</strong>です。これ以上の高成分を作るには、より高濃度な原料（硫安→尿素、過石→重過石/MAP/DAP、硫加→塩加など）へ切り替えてください。
+          💡 <strong>この原料・有機構成での製造可能上限は「N ${maxN} - P ${maxP} - K ${maxK}」まで</strong>です。これ以上の高成分を作るには、高濃度な無機原料（尿素・DAP・塩加等）や高Nな有機原料（フェザーミール・乾燥血粉・魚かす等）へ切り替えてください。
         </p>
       `;
       fillerMarginText.className = "margin-pill over";
@@ -606,7 +806,7 @@
         <p>
           1,000kg（100%）の枠内で無理なく処方成立しています。${
             remPct > 0.1
-              ? `残り <strong>${remPct}% (${Math.round(remPct * 10)}kg/t)</strong> の空き枠があります（「⚖️ 残余枠を増量材で100%に充填」で1,000kgピッタリに調整できます）。`
+              ? `残り <strong>${remPct}% (${Math.round(remPct * 10)}kg/t)</strong> の空き枠があります（「⚖️ 残余枠を増量材で100%に充填」で天然腐植等を自動充填できます）。`
               : "重量合計 100.0%（1,000kg/t）に調整済みです。"
           }
         </p>
@@ -624,7 +824,7 @@
         const mat = getMaterial(it.id);
         const widthPct = (it.ratio / maxScale) * 100;
         const isFiller = mat && mat.flags && mat.flags.includes("is_filler") && mat.N === 0 && mat.P === 0 && mat.K === 0;
-        const bg = totals.ratio > 100.05 ? "#dc2626" : isFiller ? "#94a3b8" : SEGMENT_COLORS[idx % SEGMENT_COLORS.length];
+        const bg = totals.ratio > 100.05 ? "#dc2626" : isFiller ? "#64748b" : SEGMENT_COLORS[idx % SEGMENT_COLORS.length];
         return `<div class="w-seg" style="width:${widthPct}%;background:${bg}" title="${mat ? mat.name : ""}: ${it.ratio}%">${
           widthPct > 8 ? `${mat ? mat.name.slice(0, 6) : ""} ${round1(it.ratio)}%` : ""
         }</div>`;
@@ -645,7 +845,8 @@
       )
       .join("");
 
-    // 保証成分 vs 理論成分 比較テーブル（基本4成分 ＋ 選択された追加保証成分）
+    // 保証成分 vs 理論成分 比較テーブル
+    const actualONShare = totals.N > 0 ? round1((totals.ON / totals.N) * 100) : 0;
     const compRows = [
       {
         key: "N",
@@ -653,7 +854,7 @@
         guar: state.target.N,
         req: reqTarget.N,
         actual: totals.N,
-        detail: `A-N: ${round1(totals.AN)}% / U-N: ${round1(totals.UN)}% / N-N: ${round1(totals.NN)}% / 有機N: ${round1(totals.ON)}%`
+        detail: `A-N: ${round1(totals.AN)}% / U-N: ${round1(totals.UN)}% / N-N: ${round1(totals.NN)}% / 有機態N: ${round2(totals.ON)}% (全Nの${actualONShare}%)`
       },
       {
         key: "P",
@@ -681,7 +882,31 @@
       }
     ];
 
-    // 追加指定された副成分・微量要素（または処方中に含まれている副成分）を行として追加
+    // 有機条件が設定されている場合、または処方中に有機原料が含まれる場合は「有機態窒素 / 有機肥料割合」行も検証テーブルに表示
+    if (state.organicConfig.mode !== "none" || totals.organicWeightRatio > 0) {
+      const orgReq = computeOrganicRequirement(state.organicConfig, reqTarget.N || state.target.N);
+      if (state.organicConfig.mode === "weight_ratio") {
+        compRows.push({
+          key: "ORG_W",
+          label: "🌱 有機肥料 配合割合 (重量%)",
+          guar: state.organicConfig.value,
+          req: state.organicConfig.value,
+          actual: totals.organicWeightRatio,
+          detail: `有機態N供給: ${round2(totals.ON)}% (対全N ${actualONShare}%)`
+        });
+      } else {
+        compRows.push({
+          key: "ORG_N",
+          label: "🌱 有機態窒素 (O-N %)",
+          guar: orgReq.targetON,
+          req: orgReq.targetON,
+          actual: totals.ON,
+          detail: `対全N割合: 実績 ${actualONShare}% / 有機原料重量計: ${round1(totals.organicWeightRatio)}% (${Math.round(totals.organicWeightRatio * 10)}kg/t)`
+        });
+      }
+    }
+
+    // 追加指定された副成分・微量要素
     EXTRA_NUTRIENT_DEFS.forEach((d) => {
       const isEnabled = state.enabledExtras.includes(d.key);
       const actualVal = totals[d.key] || 0;
@@ -713,7 +938,7 @@
         return `
           <tr>
             <td><strong>${r.label}</strong></td>
-            <td>${r.guar > 0 ? `${r.guar}%` : "-"}</td>
+            <td>${r.guar > 0 ? `${round2(r.guar)}%` : "-"}</td>
             <td>${r.req > 0 ? `${r.req.toFixed(2)}%` : "-"}</td>
             <td><strong style="font-size:0.95rem;">${r.actual.toFixed(2)}%</strong></td>
             <td>${badge}</td>
@@ -727,9 +952,9 @@
     document.getElementById("kpi-cost-ton").textContent = `¥${Math.round(totals.costPerTon).toLocaleString()} / t`;
     document.getElementById("kpi-cost-bag").textContent = `20kg袋あたり原料原価: ¥${Math.round(totals.costPerTon / 50).toLocaleString()}`;
 
-    const orgNShare = totals.N > 0 ? Math.round((totals.ON / totals.N) * 100) : 0;
-    document.getElementById("kpi-organic-ratio").textContent = `重量比 ${round1(totals.organicWeightRatio)}%`;
-    document.getElementById("kpi-organic-n-share").textContent = `全窒素に占める有機態N割合: ${orgNShare}% (${round2(totals.ON)}%)`;
+    const orgNShare = totals.N > 0 ? round1((totals.ON / totals.N) * 100) : 0;
+    document.getElementById("kpi-organic-ratio").textContent = `有機原料重量比 ${round1(totals.organicWeightRatio)}% (${Math.round(totals.organicWeightRatio * 10)}kg/t)`;
+    document.getElementById("kpi-organic-n-share").textContent = `有機態N: ${round2(totals.ON)}% （全窒素中の割合: ${orgNShare}%）`;
 
     const subs = [];
     EXTRA_NUTRIENT_DEFS.forEach((d) => {
@@ -799,22 +1024,30 @@
         feature: "粒状BB肥料で到達できる最高峰の高成分構成（水平型は 19.3-19.3-19.3 が物理限界、20-20-20は100%超過）"
       },
       {
-        title: "⑦ 苦土・ケイ酸入り（ようりん併用）",
-        desc: "尿素(46) ＋ ようりん(20) ＋ 塩加(60)",
-        config: { nId: "urea", pId: "fused_magnesium_phosphate", kId: "potassium_chloride" },
-        feature: "リン酸源をすべてようりん(20%)にすると、P枠が重いため中成分（11-11-11付近）が上限となる"
-      },
-      {
-        title: "⑧ 有機30%入り（菜種油かす30%固定）",
-        desc: "菜種油かす30% ＋ 尿素 ＋ DAP ＋ 塩加",
+        title: "⑦ 有機態N 30%（菜種油かす使用）",
+        desc: "菜種油かす(対全N 30%) ＋ 尿素 ＋ DAP ＋ 塩加",
         config: {
           nId: "urea",
           pId: "dap",
           kId: "potassium_chloride",
           organicId: "rapeseed_meal",
-          organicRatio: 30
+          organicMode: "on_share",
+          organicValue: 30
         },
-        feature: "重量の30%を低成分な有機原料が占めるため、残り70%枠に高濃度原料を詰めても約 14.5-14.5-14.5 が上限"
+        feature: "全窒素の30%を菜種油かす(N5.3%)で賄う場合、N1%あたり有機が5.66%枠を食うため上限は約 10.6-10.6-10.6"
+      },
+      {
+        title: "⑧ 有機態N 30%（フェザーミール使用）",
+        desc: "フェザーミール(対全N 30%) ＋ 尿素 ＋ DAP ＋ 塩加",
+        config: {
+          nId: "urea",
+          pId: "dap",
+          kId: "potassium_chloride",
+          organicId: "feather_meal",
+          organicMode: "on_share",
+          organicValue: 30
+        },
+        feature: "高N有機のフェザーミール(N12.5%)を使えば、同じ「有機態N 30%」でも約 14.8-14.8-14.8 の高成分まで製造可能になる"
       }
     ];
 
@@ -879,15 +1112,18 @@
     const kId = document.getElementById("mat-k-src").value;
     const fixedK = parseFloat(document.getElementById("mat-fixed-k").value) || 0;
     const fixedMg = parseFloat(document.getElementById("mat-fixed-mg").value) || 0;
-    const fixedOrg = parseFloat(document.getElementById("mat-fixed-org").value) || 0;
+    const orgId = document.getElementById("mat-org-src").value || "rapeseed_meal";
+    const orgMode = document.getElementById("mat-org-mode").value || "weight_ratio";
+    const orgVal = parseFloat(document.getElementById("mat-fixed-org").value) || 0;
 
     const config = {
       nId,
       pId,
       kId,
       mgId: "magnesium_hydroxide",
-      organicId: fixedOrg > 0 ? "rapeseed_meal" : null,
-      organicRatio: fixedOrg
+      organicId: orgVal > 0 ? orgId : null,
+      organicMode: orgVal > 0 ? orgMode : "none",
+      organicValue: orgVal
     };
 
     const nValues = [0, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26];
@@ -1065,6 +1301,8 @@
   function renderAll() {
     renderAuthHeader();
     renderExtraNutrientSelector();
+    updateOrganicAndFillerDropdowns();
+    renderOrganicConfigPreview();
     updateRecipeMaterialSelect();
     renderFormulatorTab();
     renderBoundaryTab();
@@ -1073,20 +1311,14 @@
 
   // ==================== アクション・ヘルパー関数 ====================
   function runSolverFromUI() {
-    const orgOpt = document.getElementById("solver-organic-opt").value;
-    let organicId = null, organicRatio = 0;
-    if (orgOpt === "rapeseed_20") { organicId = "rapeseed_meal"; organicRatio = 20; }
-    else if (orgOpt === "rapeseed_40") { organicId = "rapeseed_meal"; organicRatio = 40; }
-    else if (orgOpt === "fish_20") { organicId = "fish_meal"; organicRatio = 20; }
-    else if (orgOpt === "feather_20") { organicId = "feather_meal"; organicRatio = 20; }
-
     const config = {
       nId: document.getElementById("solver-n-source").value,
       pId: document.getElementById("solver-p-source").value,
       kId: document.getElementById("solver-k-source").value,
       mgId: document.getElementById("solver-mg-source").value,
-      organicId,
-      organicRatio
+      organicId: state.organicConfig.materialId,
+      organicMode: state.organicConfig.mode,
+      organicValue: state.organicConfig.value
     };
 
     const reqTarget = getRequiredDesignTarget();
@@ -1099,14 +1331,12 @@
     const currentSum = state.recipe.reduce((s, it) => s + it.ratio, 0);
     if (currentSum >= 100) return;
     const rem = round2(100 - currentSum);
-    const existingFiller = state.recipe.find((it) => {
-      const m = getMaterial(it.id);
-      return m && m.flags && m.flags.includes("is_filler") && m.N === 0 && m.P === 0 && m.K === 0;
-    });
+    const chosenFillerId = document.getElementById("filler-type-select").value || "filler_natural_humus";
+    const existingFiller = state.recipe.find((it) => it.id === chosenFillerId);
     if (existingFiller) {
       existingFiller.ratio = round2(existingFiller.ratio + rem);
     } else {
-      state.recipe.push({ id: "filler_clay", ratio: rem });
+      state.recipe.push({ id: chosenFillerId, ratio: rem });
     }
     renderAll();
   }
@@ -1121,6 +1351,19 @@
       const otherRatio = state.recipe.reduce((s, it, i) => (i === idx ? s : s + it.ratio), 0);
       item.ratio = Math.max(0, round2(100 - otherRatio));
       renderAll();
+      return;
+    }
+
+    if (key === "ORGANIC_TARGET") {
+      const reqTarget = getRequiredDesignTarget();
+      const orgReq = computeOrganicRequirement(
+        { materialId: mat.id, mode: state.organicConfig.mode, value: state.organicConfig.value },
+        reqTarget.N || state.target.N
+      );
+      if (orgReq.requiredWeightRatio > 0) {
+        item.ratio = orgReq.requiredWeightRatio;
+        renderAll();
+      }
       return;
     }
 
@@ -1223,7 +1466,6 @@
 
   // ==================== イベントバインディング ====================
   function bindEvents() {
-    // アプリ全体のパスワードロック画面制御 (pass: miyazawakenji)
     const lockScreen = document.getElementById("app-lock-screen");
     const unlockForm = document.getElementById("app-unlock-form");
     const gatePwInput = document.getElementById("app-gate-password");
@@ -1251,7 +1493,6 @@
       });
     }
 
-    // タブ切り替え
     document.querySelectorAll(".nav-tab").forEach((tab) => {
       tab.addEventListener("click", () => {
         document.querySelectorAll(".nav-tab").forEach((t) => {
@@ -1265,7 +1506,6 @@
       });
     });
 
-    // 管理者ログイン・ログアウト
     const authModal = document.getElementById("admin-login-modal");
     document.getElementById("btn-toggle-auth").addEventListener("click", () => {
       if (state.isAdmin) {
@@ -1295,7 +1535,6 @@
       }
     });
 
-    // プリセット銘柄選択
     document.getElementById("preset-grade-select").addEventListener("change", (e) => {
       const p = window.MASTER_FERTILIZER_DB.gradePresets.find((x) => x.id === e.target.value);
       if (!p) return;
@@ -1309,16 +1548,15 @@
       renderAll();
     });
 
-    // 基本4目標成分入力
     ["N", "P", "K", "Mg"].forEach((k) => {
       document.getElementById(`target-${k}`).addEventListener("input", (e) => {
         state.target[k] = Math.max(0, parseFloat(e.target.value) || 0);
+        renderOrganicConfigPreview();
         renderFormulatorTab();
         renderBoundaryTab();
       });
     });
 
-    // 追加保証成分（Ca, Si, S, Mn, B, Fe, Zn, Cu, Mo）のトグルと数値入力
     document.getElementById("extra-nutrient-toggles").addEventListener("change", (e) => {
       const key = e.target.dataset.extraToggle;
       if (!key) return;
@@ -1340,6 +1578,36 @@
       if (!key) return;
       state.target[key] = Math.max(0, parseFloat(e.target.value) || 0);
       renderFormulatorTab();
+    });
+
+    // 有機原料の種類・指定モード・数値のイベント
+    document.getElementById("solver-organic-material").addEventListener("change", (e) => {
+      state.organicConfig.materialId = e.target.value;
+      renderOrganicConfigPreview();
+    });
+
+    document.getElementById("solver-organic-mode").addEventListener("change", (e) => {
+      const prevMode = state.organicConfig.mode;
+      state.organicConfig.mode = e.target.value;
+      if (state.organicConfig.mode === "on_share" && (prevMode === "none" || prevMode === "on_abs")) {
+        state.organicConfig.value = 30;
+      } else if (state.organicConfig.mode === "on_abs") {
+        state.organicConfig.value = 2.0;
+      } else if (state.organicConfig.mode === "weight_ratio") {
+        state.organicConfig.value = 25;
+      }
+      renderOrganicConfigPreview();
+      renderFormulatorTab();
+    });
+
+    document.getElementById("solver-organic-value").addEventListener("input", (e) => {
+      state.organicConfig.value = Math.max(0, parseFloat(e.target.value) || 0);
+      renderOrganicConfigPreview();
+      renderFormulatorTab();
+    });
+
+    document.getElementById("filler-type-select").addEventListener("change", (e) => {
+      state.selectedFillerId = e.target.value;
     });
 
     document.getElementById("overage-select").addEventListener("change", (e) => {
@@ -1403,9 +1671,12 @@
 
     // TAB 2: 成分限界検討イベント
     document.getElementById("limit-ratio-pattern").addEventListener("change", renderBoundaryTab);
-    ["mat-n-src", "mat-p-src", "mat-k-src", "mat-fixed-k", "mat-fixed-mg", "mat-fixed-org"].forEach((id) => {
-      document.getElementById(id).addEventListener("input", render2DFeasibilityMatrix);
-      document.getElementById(id).addEventListener("change", render2DFeasibilityMatrix);
+    ["mat-n-src", "mat-p-src", "mat-k-src", "mat-fixed-k", "mat-fixed-mg", "mat-org-src", "mat-org-mode", "mat-fixed-org"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.addEventListener("input", render2DFeasibilityMatrix);
+        el.addEventListener("change", render2DFeasibilityMatrix);
+      }
     });
 
     document.getElementById("limit-comparison-tbody").addEventListener("click", (e) => {
@@ -1413,6 +1684,13 @@
       if (!btn) return;
       const combo = window._cachedBoundaryCombos[parseInt(btn.dataset.applyCombo, 10)];
       if (!combo) return;
+      if (combo.config.organicMode) {
+        state.organicConfig.materialId = combo.config.organicId || "rapeseed_meal";
+        state.organicConfig.mode = combo.config.organicMode;
+        state.organicConfig.value = combo.config.organicValue || 30;
+      } else {
+        state.organicConfig.mode = "none";
+      }
       const res = solveFormulation(getRequiredDesignTarget(), combo.config);
       state.recipe = res.items;
       document.querySelector('.nav-tab[data-tab="formulator"]').click();
@@ -1426,7 +1704,9 @@
       const p = parseFloat(cell.dataset.mp);
       const k = parseFloat(document.getElementById("mat-fixed-k").value) || 0;
       const mg = parseFloat(document.getElementById("mat-fixed-mg").value) || 0;
-      const org = parseFloat(document.getElementById("mat-fixed-org").value) || 0;
+      const orgId = document.getElementById("mat-org-src").value || "rapeseed_meal";
+      const orgMode = document.getElementById("mat-org-mode").value || "weight_ratio";
+      const orgVal = parseFloat(document.getElementById("mat-fixed-org").value) || 0;
 
       state.target.N = n;
       state.target.P = p;
@@ -1437,13 +1717,22 @@
       document.getElementById("target-K").value = k;
       document.getElementById("target-Mg").value = mg;
 
+      if (orgVal > 0) {
+        state.organicConfig.materialId = orgId;
+        state.organicConfig.mode = orgMode;
+        state.organicConfig.value = orgVal;
+      } else {
+        state.organicConfig.mode = "none";
+      }
+
       const config = {
         nId: document.getElementById("mat-n-src").value,
         pId: document.getElementById("mat-p-src").value,
         kId: document.getElementById("mat-k-src").value,
         mgId: "magnesium_hydroxide",
-        organicId: org > 0 ? "rapeseed_meal" : null,
-        organicRatio: org
+        organicId: orgVal > 0 ? orgId : null,
+        organicMode: orgVal > 0 ? orgMode : "none",
+        organicValue: orgVal
       };
       const res = solveFormulation(getRequiredDesignTarget(), config);
       state.recipe = res.items;

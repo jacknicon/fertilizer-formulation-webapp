@@ -192,21 +192,44 @@
               </select>
             </div>
             <div class="form-group">
-              <label>苦土源 (Mg) / 有機原料の固定配合</label>
-              <div class="split-select">
-                <select id="solver-mg-source" class="select-input sm" title="苦土源">
-                  <option value="magnesium_hydroxide" selected>水マグ (Mg:58%)</option>
-                  <option value="magnesium_sulfate">硫マグ (Mg:20%)</option>
-                  <option value="dolomite_lime">苦土石灰 (Mg:15%)</option>
-                </select>
-                <select id="solver-organic-opt" class="select-input sm" title="有機原料の固定配合枠">
-                  <option value="none" selected>有機なし (0%)</option>
-                  <option value="rapeseed_20">菜種油かす 20%固定</option>
-                  <option value="rapeseed_40">菜種油かす 40%固定</option>
-                  <option value="fish_20">魚かす 20%固定</option>
-                  <option value="feather_20">フェザーミール 20%固定</option>
+              <label>主たる苦土源 (Mg)</label>
+              <select id="solver-mg-source" class="select-input sm" title="苦土源">
+                <option value="magnesium_hydroxide" selected>水マグ (Mg:58%)</option>
+                <option value="magnesium_sulfate">硫マグ (Mg:20%)</option>
+                <option value="dolomite_lime">苦土石灰 (Mg:15%)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- 有機原料の種類・有機態窒素・有機肥料割合の選択パネル -->
+          <div class="organic-config-panel">
+            <div class="organic-panel-title">
+              🌱 <strong>有機原料の種類 ＆ 有機態窒素・有機肥料割合の指定</strong>
+            </div>
+            <div class="organic-config-grid">
+              <div class="form-group">
+                <label for="solver-organic-material">使用する有機原料の種類</label>
+                <select id="solver-organic-material" class="select-input sm"></select>
+              </div>
+              <div class="form-group">
+                <label for="solver-organic-mode">有機の指定方法</label>
+                <select id="solver-organic-mode" class="select-input sm">
+                  <option value="none" selected>有機原料を使用しない (0%)</option>
+                  <option value="on_share">① 全窒素に占める「有機態窒素の割合 (%)」で指定</option>
+                  <option value="on_abs">② 製品中の「有機態窒素の絶対量 (O-N %)」で指定</option>
+                  <option value="weight_ratio">③ 製品中の「有機肥料の配合重量割合 (重量%)」で指定</option>
                 </select>
               </div>
+              <div class="form-group" id="solver-organic-val-wrap">
+                <label for="solver-organic-value" id="solver-organic-val-label">指定値 (%)</label>
+                <div class="unit-input">
+                  <input type="number" id="solver-organic-value" value="30" min="0" max="100" step="1" disabled />
+                  <span id="solver-organic-val-unit">%</span>
+                </div>
+              </div>
+            </div>
+            <div id="solver-organic-preview" class="organic-preview-note">
+              有機原料なし（無機原料ベースで逆算します）
             </div>
           </div>
         </div>
@@ -221,8 +244,15 @@
               <span class="section-tag">STEP 2</span>
               <h2>処方ブレンド構成表（100重量% ＝ 1,000 kg/t 基準）</h2>
             </div>
-            <div class="btn-row">
-              <button type="button" id="btn-fill-filler" class="btn-outline btn-sm" title="100%に満たない残余重量を増量材（フィラー）で自動的に埋めます">
+            <div class="btn-row filler-action-bar">
+              <select id="filler-type-select" class="select-input sm" style="width: auto;" title="100%残余枠を埋める増量材（フィラー）を選択">
+                <option value="filler_natural_humus" selected>増量材: 天然腐植 (成分0%)</option>
+                <option value="filler_clay">増量材: クレー・カオリン (成分0%)</option>
+                <option value="filler_zeolite">増量材: ゼオライト</option>
+                <option value="filler_gypsum">増量材: 石膏 (Ca30%)</option>
+                <option value="filler_calcium_carbonate">増量材: 炭カル (Ca53%)</option>
+              </select>
+              <button type="button" id="btn-fill-filler" class="btn-outline btn-sm" title="100%に満たない残余重量を選択した増量材（フィラー）で自動的に埋めます">
                 ⚖️ 残余枠を増量材で100%に充填
               </button>
               <button type="button" id="btn-clear-recipe" class="btn-secondary btn-sm">
@@ -426,8 +456,19 @@
               <input type="number" id="mat-fixed-mg" class="num-input sm" value="0" min="0" max="20" step="1" />
             </div>
             <div class="form-group">
-              <label>固定有機枠 (菜種油かす %)</label>
-              <input type="number" id="mat-fixed-org" class="num-input sm" value="0" min="0" max="80" step="5" />
+              <label>有機原料の種類</label>
+              <select id="mat-org-src" class="select-input sm"></select>
+            </div>
+            <div class="form-group">
+              <label>有機条件の指定方法 ＆ 数値(%)</label>
+              <div class="split-select">
+                <select id="mat-org-mode" class="select-input sm">
+                  <option value="weight_ratio" selected>有機肥料割合(重量%)</option>
+                  <option value="on_share">有機態N割合(対全N%)</option>
+                  <option value="on_abs">有機態N絶対量(O-N%)</option>
+                </select>
+                <input type="number" id="mat-fixed-org" class="num-input sm" value="0" min="0" max="100" step="5" />
+              </div>
             </div>
           </div>
 
