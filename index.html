@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>化成肥料・BB肥料 処方設計＆成分限界シミュレーター | FertiFormulate Pro</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- アプリケーション全体のパスワードロック画面 (pass: miyazawakenji) -->
+  <div id="app-lock-screen" class="app-lock-screen">
+    <div class="lock-card">
+      <div class="lock-icon">🌾</div>
+      <h2>化成肥料・BB肥料 処方設計シミュレーター</h2>
+      <p class="lock-desc">このアプリケーションへアクセスするにはパスワードを入力してください。</p>
+      <form id="app-unlock-form">
+        <div class="form-group">
+          <input
+            type="password"
+            id="app-gate-password"
+            class="text-input lock-input"
+            placeholder="パスワードを入力..."
+            autocomplete="current-password"
+            required
+            autofocus
+          />
+        </div>
+        <div id="app-gate-error" class="auth-error hidden">パスワードが正しくありません。</div>
+        <button type="submit" class="btn-primary lock-submit-btn">ログインして開く</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- トップヘッダー（管理者ステータス＆ナビゲーション） -->
+  <header class="app-header">
+    <div class="header-top">
+      <div class="brand">
+        <span class="brand-badge">BB / 化成処方設計</span>
+        <div>
+          <h1>化成肥料・BB肥料 処方設計＆成分限界シミュレーター</h1>
+          <p class="subtitle">1,000kg(100%)枠内での銘柄成立判定・到達限界マトリクス・チェックボックス式原料＆禁忌管理</p>
+        </div>
+      </div>
+
+      <!-- 管理者権限ステータス＆ログインボタン -->
+      <div class="auth-panel">
+        <span id="role-status-badge" class="role-badge user-mode">
+          👤 一般利用者モード（マスター閲覧・処方試算）
+        </span>
+        <button type="button" id="btn-toggle-auth" class="btn-auth">
+          🔒 管理者ログイン
+        </button>
+      </div>
+    </div>
+
+    <nav class="main-nav" role="tablist">
+      <button type="button" class="nav-tab active" data-tab="formulator" role="tab" aria-selected="true">
+        🧪 1. 処方設計・100%成立判定シート
+      </button>
+      <button type="button" class="nav-tab" data-tab="boundary" role="tab" aria-selected="false">
+        📊 2. 成分限界（できる／できない成分）検討マトリクス
+      </button>
+      <button type="button" class="nav-tab" data-tab="materials" role="tab" aria-selected="false">
+        🗂️ 3. 原料マスター一覧 ＆ 原料・禁忌チェック追加
+      </button>
+    </nav>
+  </header>
+
+  <main class="app-container">
+    <!-- =========================================================================
+         TAB 1: 処方設計・100%成立判定シート
+         ========================================================================= -->
+    <section id="tab-formulator" class="tab-panel active">
+      <!-- 上段: 目標銘柄設定 ＆ 逆算オートソルバー -->
+      <div class="top-work-grid">
+        <!-- 左カード: 目標保証成分（銘柄）設定 -->
+        <div class="card">
+          <div class="card-header-flex">
+            <div>
+              <span class="section-tag">STEP 1</span>
+              <h2>目標銘柄（保証成分 %）の設定</h2>
+            </div>
+            <div class="preset-selector-wrap">
+              <label for="preset-grade-select">代表的な処方例をロード:</label>
+              <select id="preset-grade-select" class="select-input sm"></select>
+            </div>
+          </div>
+
+          <div class="target-grade-grid">
+            <div class="grade-input-box n-theme">
+              <label for="target-N">窒素 (T-N)</label>
+              <div class="unit-input">
+                <input type="number" id="target-N" value="15.0" min="0" max="46" step="0.5" />
+                <span>%</span>
+              </div>
+            </div>
+            <div class="grade-input-box p-theme">
+              <label for="target-P">リン酸 (T-P₂O₅)</label>
+              <div class="unit-input">
+                <input type="number" id="target-P" value="15.0" min="0" max="50" step="0.5" />
+                <span>%</span>
+              </div>
+            </div>
+            <div class="grade-input-box k-theme">
+              <label for="target-K">カリ (K₂O)</label>
+              <div class="unit-input">
+                <input type="number" id="target-K" value="15.0" min="0" max="60" step="0.5" />
+                <span>%</span>
+              </div>
+            </div>
+            <div class="grade-input-box mg-theme">
+              <label for="target-Mg">苦土 (MgO)</label>
+              <div class="unit-input">
+                <input type="number" id="target-Mg" value="0.0" min="0" max="30" step="0.5" />
+                <span>%</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="design-options-row">
+            <div class="option-item">
+              <label for="overage-select" title="分析割れを防ぐため、目標保証成分に対してどれだけ多めに設計するか">
+                🛡️ 製造安全マージン（盛り込み）:
+              </label>
+              <select id="overage-select" class="select-input sm">
+                <option value="none" selected>なし（保証値＝理論値で限界を計算）</option>
+                <option value="plus_02">+0.2% 盛り込み（各成分に+0.2%上乗せ）</option>
+                <option value="plus_03">+0.3% 盛り込み（各成分に+0.3%上乗せ）</option>
+                <option value="mult_103">×1.03倍（3%安全率を上乗せ）</option>
+              </select>
+            </div>
+            <label class="checkbox-inline">
+              <input type="checkbox" id="require-chlorine-free" />
+              <span>塩素フリー（硫酸系銘柄として検査）</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- 右カード: 使用原料を指定して1,000kg処方を一発逆算 -->
+        <div class="card solver-card">
+          <div class="card-header-flex">
+            <div>
+              <span class="section-tag accent">かんたん逆算ソルバー</span>
+              <h2>⚡ 原料を指定して「作れるか」一発逆算</h2>
+            </div>
+            <button type="button" id="btn-run-solver" class="btn-primary">
+              ⚡ この原料構成で目標銘柄を逆算
+            </button>
+          </div>
+          <p class="card-desc">
+            使いたいベース原料を選んでボタンを押すと、目標のN-P-K-Mgを達成するのに必要な配合率（%）を連立計算し、<strong>100%（1,000kg）枠内に収まるか・何%超過するか</strong>を即座に判定します。
+          </p>
+
+          <div class="solver-select-grid">
+            <div class="form-group">
+              <label>主たる窒素源 (N)</label>
+              <select id="solver-n-source" class="select-input sm">
+                <option value="urea" selected>尿素 (N:46%)</option>
+                <option value="ammonium_sulfate">硫安 (N:21%)</option>
+                <option value="ammonium_chloride">塩安 (N:25%)</option>
+                <option value="coated_urea_lp">被覆尿素 (N:42%)</option>
+                <option value="ibdu">IB窒素 (N:31%)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>主たるリン酸源 (P / N-P)</label>
+              <select id="solver-p-source" class="select-input sm">
+                <option value="dap" selected>DAP (18-46-0)</option>
+                <option value="map">MAP (11-50-0)</option>
+                <option value="triple_superphosphate">重過石 (P:35%)</option>
+                <option value="single_superphosphate">過リン酸石灰 (P:17.5%)</option>
+                <option value="fused_magnesium_phosphate">ようりん (P:20%, Mg:15%)</option>
+                <option value="multi_phosphate">重焼リン (P:35%, Mg:4.5%)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>主たるカリ源 (K)</label>
+              <select id="solver-k-source" class="select-input sm">
+                <option value="potassium_chloride" selected>塩化カリ (K:60%)</option>
+                <option value="potassium_sulfate">硫酸カリ (K:50%)</option>
+                <option value="potassium_magnesium_sulfate">硫酸カリ苦土 (K:22%, Mg:10%)</option>
+                <option value="potassium_silicate">ケイ酸カリ (K:20%)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>苦土源 (Mg) / 有機原料の固定配合</label>
+              <div class="split-select">
+                <select id="solver-mg-source" class="select-input sm" title="苦土源">
+                  <option value="magnesium_hydroxide" selected>水マグ (Mg:58%)</option>
+                  <option value="magnesium_sulfate">硫マグ (Mg:20%)</option>
+                  <option value="dolomite_lime">苦土石灰 (Mg:15%)</option>
+                </select>
+                <select id="solver-organic-opt" class="select-input sm" title="有機原料の固定配合枠">
+                  <option value="none" selected>有機なし (0%)</option>
+                  <option value="rapeseed_20">菜種油かす 20%固定</option>
+                  <option value="rapeseed_40">菜種油かす 40%固定</option>
+                  <option value="fish_20">魚かす 20%固定</option>
+                  <option value="feather_20">フェザーミール 20%固定</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 下段: 左＝1,000kg(100%)処方ブレンド編集、右＝成立可否ジャッジ＆成分・禁忌検証 -->
+      <div class="main-work-grid">
+        <!-- 左カラム: 処方ブレンド編集テーブル -->
+        <div class="card">
+          <div class="card-header-flex">
+            <div>
+              <span class="section-tag">STEP 2</span>
+              <h2>処方ブレンド構成表（100重量% ＝ 1,000 kg/t 基準）</h2>
+            </div>
+            <div class="btn-row">
+              <button type="button" id="btn-fill-filler" class="btn-outline btn-sm" title="100%に満たない残余重量を増量材（フィラー）で自動的に埋めます">
+                ⚖️ 残余枠を増量材で100%に充填
+              </button>
+              <button type="button" id="btn-clear-recipe" class="btn-secondary btn-sm">
+                🗑️ クリア
+              </button>
+            </div>
+          </div>
+
+          <!-- 原料追加バー -->
+          <div class="add-material-bar">
+            <select id="recipe-category-filter" class="select-input sm"></select>
+            <select id="recipe-material-select" class="select-input"></select>
+            <button type="button" id="btn-add-to-recipe" class="btn-primary">＋ 処方表へ追加</button>
+          </div>
+
+          <!-- 処方テーブル -->
+          <div class="table-responsive">
+            <table class="recipe-table">
+              <thead>
+                <tr>
+                  <th>配合原料名（保証成分・特性）</th>
+                  <th style="width: 145px;">配合率 (%)</th>
+                  <th style="width: 95px;">kg / 1t</th>
+                  <th style="width: 95px;">kg / 20kg袋</th>
+                  <th>供給成分 (%) [N - P - K - Mg]</th>
+                  <th>ワンタッチ逆算</th>
+                  <th>削除</th>
+                </tr>
+              </thead>
+              <tbody id="recipe-table-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 右カラム: 成立可否ジャッジ ＆ 成分内訳・禁忌アラート -->
+        <div class="card judge-card">
+          <div class="card-header-flex">
+            <div>
+              <span class="section-tag success">STEP 3</span>
+              <h2>製造可否・成分限界 ＆ 配合禁忌ジャッジ</h2>
+            </div>
+            <div class="btn-row">
+              <button type="button" id="btn-export-csv" class="btn-outline btn-sm">📥 処方書CSV出力</button>
+              <button type="button" id="btn-print" class="btn-outline btn-sm">🖨️ 印刷</button>
+            </div>
+          </div>
+
+          <!-- メイン判定バナー（製造可能 / 100%超過で製造不可） -->
+          <div id="feasibility-banner" class="feasibility-banner"></div>
+
+          <!-- 100% 重量枠ゲージ -->
+          <div class="weight-gauge-box">
+            <div class="gauge-header">
+              <span><strong>原料重量比率合計:</strong> <strong id="total-ratio-text">0.0%</strong> (<span id="total-kg-text">0</span> / 1,000 kg)</span>
+              <span id="filler-margin-text" class="margin-pill">空き枠: 100.0%</span>
+            </div>
+            <div class="weight-bar-track" id="weight-bar-segments"></div>
+            <div class="weight-bar-scale">
+              <span>0%</span>
+              <span>25% (250kg)</span>
+              <span>50% (500kg)</span>
+              <span>75% (750kg)</span>
+              <span>100% (1,000kg 上限)</span>
+            </div>
+          </div>
+
+          <!-- 配合禁忌・物理化学リスク診断アラート -->
+          <div id="compatibility-alerts" class="alerts-container"></div>
+
+          <!-- 目標成分 vs 設計理論成分 比較表 -->
+          <div class="spec-comparison-box">
+            <h3>📊 保証成分・設計理論値 検証テーブル</h3>
+            <table class="comp-table">
+              <thead>
+                <tr>
+                  <th>成分項目</th>
+                  <th>目標保証値</th>
+                  <th>必要設計値<br/><small>(安全率込)</small></th>
+                  <th>処方理論値</th>
+                  <th>過不足</th>
+                  <th>内訳・形態詳細</th>
+                </tr>
+              </thead>
+              <tbody id="comp-table-body"></tbody>
+            </table>
+          </div>
+
+          <!-- コスト・副成分・有機率サマリー -->
+          <div class="summary-kpis">
+            <div class="kpi-box">
+              <span class="kpi-label">1トンあたり原料原価</span>
+              <strong id="kpi-cost-ton">¥0 / t</strong>
+              <small id="kpi-cost-bag">20kg袋あたり: ¥0</small>
+            </div>
+            <div class="kpi-box">
+              <span class="kpi-label">有機質原料 配合率 / 有機態N率</span>
+              <strong id="kpi-organic-ratio">0.0%</strong>
+              <small id="kpi-organic-n-share">全窒素に占める有機態N: 0%</small>
+            </div>
+            <div class="kpi-box">
+              <span class="kpi-label">副成分 (CaO / SiO₂ / Mn / B)</span>
+              <strong id="kpi-sub-nutrients">-</strong>
+              <small id="kpi-chlorine-status">塩素(Cl): なし</small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =========================================================================
+         TAB 2: 成分限界（できる／できない成分）検討マトリクス
+         ========================================================================= -->
+    <section id="tab-boundary" class="tab-panel">
+      <div class="boundary-grid">
+        <!-- 機能A: 原料組み合わせ別の「到達可能な最高成分値」一覧比較 -->
+        <div class="card">
+          <div class="card-header-flex">
+            <div>
+              <span class="section-tag">限界比較 1</span>
+              <h2>🏆 原料組み合わせ別「作れる最高成分（上限ライン）」比較表</h2>
+              <p class="card-desc">
+                選んだ成分比率（水平型 1:1:1、山型 2:3:2 など）を保ったまま、<strong>重量合計100%（固結防止・造粒余地を含める場合は98%）以内で到達できる理論上の限界銘柄</strong>を原料セットごとに比較します。
+              </p>
+            </div>
+            <div class="ratio-selector-group">
+              <label>検討する銘柄比率パターン (N : P₂O₅ : K₂O):</label>
+              <select id="limit-ratio-pattern" class="select-input">
+                <option value="1:1:1" selected>水平型 1 : 1 : 1 （例: 8-8-8, 15-15-15, 19-19-19）</option>
+                <option value="2:3:2">リン酸山型 2 : 3 : 2 （例: 8-12-8, 12-18-12）</option>
+                <option value="1:2:1">高リン酸型 1 : 2 : 1 （例: 8-16-8, 10-20-10）</option>
+                <option value="2:1:2">谷型（追肥・NK寄り） 2 : 1 : 2 （例: 14-7-14, 18-9-18）</option>
+                <option value="3:2:1">窒素優位型 3 : 2 : 1 （例: 15-10-5, 21-14-7）</option>
+                <option value="current">現在STEP 1で設定中の目標比率を使う</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="table-responsive">
+            <table class="limit-comparison-table">
+              <thead>
+                <tr>
+                  <th>原料組み合わせパターン</th>
+                  <th>使用原料 (N源 / P源 / K源 / 他)</th>
+                  <th>製造可能な最高成分<br/><small>(100%限界ライン)</small></th>
+                  <th>実用推奨上限<br/><small>(原料枠95%・余裕5%確保)</small></th>
+                  <th>現在の目標銘柄<br/><span id="limit-current-target-label">(15-15-15)</span> の成否</th>
+                  <th>化学性・特徴</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="limit-comparison-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 機能B: インタラクティブ「できる成分／できない成分」2次元境界マトリクス -->
+        <div class="card">
+          <div class="card-header-flex">
+            <div>
+              <span class="section-tag accent">限界マップ 2</span>
+              <h2>🗺️ 「どの成分までできて、どこからできないか」2次元境界マトリクス</h2>
+              <p class="card-desc">
+                使用する原料と固定成分（K₂O・MgO・有機配合率）を指定すると、<strong>窒素(N) × リン酸(P₂O₅) の全組み合わせについて「🟢 製造可能（残り増量材枠%）」か「🔴 製造不可（100%超過）」かの境界マップ</strong>を生成します。任意のセルをクリックするとその銘柄で処方表を作成します。
+              </p>
+            </div>
+          </div>
+
+          <div class="matrix-controls-bar">
+            <div class="form-group">
+              <label>窒素原料 (N源)</label>
+              <select id="mat-n-src" class="select-input sm">
+                <option value="urea" selected>尿素 (N:46%)</option>
+                <option value="ammonium_sulfate">硫安 (N:21%)</option>
+                <option value="ammonium_chloride">塩安 (N:25%)</option>
+                <option value="coated_urea_lp">被覆尿素 (N:42%)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>リン酸原料 (P源)</label>
+              <select id="mat-p-src" class="select-input sm">
+                <option value="dap" selected>DAP (18-46-0)</option>
+                <option value="map">MAP (11-50-0)</option>
+                <option value="triple_superphosphate">重過石 (P:35%)</option>
+                <option value="single_superphosphate">過石 (P:17.5%)</option>
+                <option value="fused_magnesium_phosphate">ようりん (P:20%)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>カリ原料 (K源)</label>
+              <select id="mat-k-src" class="select-input sm">
+                <option value="potassium_chloride" selected>塩化カリ (K:60%)</option>
+                <option value="potassium_sulfate">硫酸カリ (K:50%)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>固定カリ成分 (K₂O %)</label>
+              <input type="number" id="mat-fixed-k" class="num-input sm" value="15" min="0" max="50" step="1" />
+            </div>
+            <div class="form-group">
+              <label>固定苦土 (MgO % 水マグ換算)</label>
+              <input type="number" id="mat-fixed-mg" class="num-input sm" value="0" min="0" max="20" step="1" />
+            </div>
+            <div class="form-group">
+              <label>固定有機枠 (菜種油かす %)</label>
+              <input type="number" id="mat-fixed-org" class="num-input sm" value="0" min="0" max="80" step="5" />
+            </div>
+          </div>
+
+          <div class="matrix-legend">
+            <span class="m-leg feasible">🟢 製造可能（数値は100%に対する「残りの増量材枠%」）</span>
+            <span class="m-leg tight">🟡 限界ギリギリ（残り枠 0〜5%）</span>
+            <span class="m-leg infeasible">🔴 製造不可（100%超過 または DAP等の随伴N超過により成立せず）</span>
+          </div>
+
+          <div class="table-responsive" id="feasibility-matrix-wrap"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =========================================================================
+         TAB 3: 原料マスター一覧 ＆ チェックボックス式原料・禁忌追加
+         ========================================================================= -->
+    <section id="tab-materials" class="tab-panel">
+      <!-- 権限説明バー -->
+      <div id="admin-notice-bar" class="admin-notice-bar"></div>
+
+      <div class="materials-tab-grid">
+        <!-- 左/上: 新規原料追加・編集フォーム（チェックボックス方式） -->
+        <div class="card add-material-form-card">
+          <div class="card-header-flex">
+            <div>
+              <span class="section-tag" id="form-mode-tag">原料追加・禁忌設定</span>
+              <h2 id="material-form-title">➕ 追加配合したい肥料原料の登録（チェックボックス式）</h2>
+            </div>
+            <button type="button" id="btn-reset-mat-form" class="btn-secondary btn-sm">入力クリア</button>
+          </div>
+          <p class="card-desc">
+            追加したい原料の<strong>保証成分（%）</strong>を入力し、該当する<strong>性質・禁忌事項のチェックボックス</strong>にチェックを入れるだけで、処方設計時の配合禁忌や限界計算に自動反映されます。
+          </p>
+
+          <form id="material-register-form">
+            <input type="hidden" id="edit-mat-id" value="" />
+
+            <div class="mat-form-basic-grid">
+              <div class="form-group span-2">
+                <label for="mat-name">原料名称 *</label>
+                <input type="text" id="mat-name" class="text-input" placeholder="例：粒状苦土過リン酸、高度化成ベースA、豚ぷんペレット等" required />
+              </div>
+              <div class="form-group">
+                <label for="mat-category">原料カテゴリ</label>
+                <select id="mat-category" class="select-input"></select>
+              </div>
+              <div class="form-group">
+                <label for="mat-price">参考トン単価 (円/1,000kg)</label>
+                <input type="number" id="mat-price" class="num-input" value="80000" min="0" step="1000" />
+              </div>
+            </div>
+
+            <!-- 成分入力グリッド -->
+            <h3 class="sub-heading">1. 含有成分（重量 %）の入力</h3>
+            <div class="mat-nutrients-input-grid">
+              <div class="form-group">
+                <label>窒素全量 T-N (%)</label>
+                <input type="number" id="mat-N" class="num-input" value="0" min="0" max="100" step="0.1" />
+              </div>
+              <div class="form-group">
+                <label>内 アンモニア性 A-N (%)</label>
+                <input type="number" id="mat-AN" class="num-input" value="0" min="0" max="100" step="0.1" />
+              </div>
+              <div class="form-group">
+                <label>内 尿素性 U-N (%)</label>
+                <input type="number" id="mat-UN" class="num-input" value="0" min="0" max="100" step="0.1" />
+              </div>
+              <div class="form-group">
+                <label>リン酸全量 T-P₂O₅ (%)</label>
+                <input type="number" id="mat-P" class="num-input" value="0" min="0" max="100" step="0.1" />
+              </div>
+              <div class="form-group">
+                <label>内 水溶性 W-P₂O₅ (%)</label>
+                <input type="number" id="mat-WP" class="num-input" value="0" min="0" max="100" step="0.1" />
+              </div>
+              <div class="form-group">
+                <label>内 く溶性 C-P₂O₅ (%)</label>
+                <input type="number" id="mat-CP" class="num-input" value="0" min="0" max="100" step="0.1" />
+              </div>
+              <div class="form-group">
+                <label>カリ K₂O (%)</label>
+                <input type="number" id="mat-K" class="num-input" value="0" min="0" max="100" step="0.1" />
+              </div>
+              <div class="form-group">
+                <label>苦土 MgO (%)</label>
+                <input type="number" id="mat-Mg" class="num-input" value="0" min="0" max="100" step="0.1" />
+              </div>
+              <div class="form-group">
+                <label>石灰 CaO (%)</label>
+                <input type="number" id="mat-Ca" class="num-input" value="0" min="0" max="100" step="0.1" />
+              </div>
+              <div class="form-group">
+                <label>ケイ酸 SiO₂ (%)</label>
+                <input type="number" id="mat-Si" class="num-input" value="0" min="0" max="100" step="0.1" />
+              </div>
+              <div class="form-group">
+                <label>マンガン MnO (%)</label>
+                <input type="number" id="mat-Mn" class="num-input" value="0" min="0" max="100" step="0.1" />
+              </div>
+              <div class="form-group">
+                <label>ホウ素 B₂O₃ (%)</label>
+                <input type="number" id="mat-B" class="num-input" value="0" min="0" max="100" step="0.1" />
+              </div>
+            </div>
+
+            <!-- チェックボックスによる特性・禁忌事項選択 -->
+            <h3 class="sub-heading">2. 化学的特性・配合禁忌事項のチェックボックス（該当するものを選択）</h3>
+            <div id="flag-checkboxes-container" class="flag-groups-container"></div>
+
+            <!-- 特定原料との直接配合禁忌チェックボックス -->
+            <h3 class="sub-heading">3. 特定の既存原料との「直接配合禁忌（混合不可）」指定（任意）</h3>
+            <p class="small-note">上の化学特性チェックによる自動判定に加え、特定の原料と絶対に混ぜたくない場合はチェックを入れてください。</p>
+            <div id="direct-forbidden-checkboxes" class="direct-forbidden-grid"></div>
+
+            <div class="form-group" style="margin-top: 12px;">
+              <label for="mat-note">備考・配合上の注意点メモ</label>
+              <input type="text" id="mat-note" class="text-input" placeholder="例：BB配合時は粒径2〜4mm品を使用すること、配合上限20%まで等" />
+            </div>
+
+            <div class="mat-submit-bar">
+              <button type="submit" id="btn-submit-material" class="btn-primary btn-lg">
+                💾 原料を追加する
+              </button>
+              <button type="button" id="btn-export-master-json" class="btn-outline" title="管理者のみ：更新されたマスターデータをファイルとして書き出します">
+                📦 マスターデータ(materials.js)を書き出し保存
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- 下: 登録済み原料マスター一覧表 -->
+        <div class="card">
+          <div class="card-header-flex">
+            <div>
+              <h2>📋 登録済み肥料原料マスター一覧</h2>
+              <p class="card-desc">現在登録されている原料の成分値と禁忌特性タグの一覧です。（管理者ログイン中のみマスター原料の編集・削除が可能です）</p>
+            </div>
+            <div class="catalog-search-wrap">
+              <input type="search" id="master-search-input" class="text-input sm" placeholder="🔍 原料名・特性で検索..." />
+            </div>
+          </div>
+
+          <div class="table-responsive">
+            <table class="master-list-table">
+              <thead>
+                <tr>
+                  <th>区分</th>
+                  <th>原料名</th>
+                  <th>T-N<br/><small>(A-N / U-N)</small></th>
+                  <th>T-P₂O₅<br/><small>(W-P / C-P)</small></th>
+                  <th>K₂O</th>
+                  <th>MgO</th>
+                  <th>CaO / SiO₂</th>
+                  <th>設定されている禁忌・特性フラグ</th>
+                  <th>単価/t</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="master-list-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 管理者ログインモーダル -->
+  <div id="admin-login-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>🔑 管理者モード認証（マスター原料更新権限）</h3>
+        <button type="button" id="btn-close-auth-modal" class="close-btn">✕</button>
+      </div>
+      <p class="card-desc">
+        サーバー（共通マスター）上の原料一覧への新規保存・既存原料の編集・削除を行うには、管理者パスワードを入力してください。<br/>
+        <small>※ 初期パスワード: <code>admin1234</code></small>
+      </p>
+      <form id="admin-login-form">
+        <div class="form-group">
+          <label for="admin-password-input">管理者パスワード</label>
+          <input type="password" id="admin-password-input" class="text-input" placeholder="パスワードを入力" required />
+        </div>
+        <div id="auth-error-msg" class="auth-error hidden">パスワードが正しくありません。</div>
+        <div class="modal-footer">
+          <button type="button" id="btn-cancel-auth" class="btn-secondary">キャンセル</button>
+          <button type="submit" class="btn-primary">ロック解除（管理者モードへ切替）</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="data/materials.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
